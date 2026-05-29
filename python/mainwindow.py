@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import shutil
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, QTimer
@@ -34,6 +35,12 @@ class MainWindow(QMainWindow):
         self._spinner_timer = QTimer(self)
         self._spinner_timer.timeout.connect(self._tick_spinner)
 
+        # Polls worker.current_path every 150 ms — replaces cross-thread signals
+        # that caused Qt event-queue lock contention and tripled scan time.
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(150)
+        self._poll_timer.timeout.connect(self._poll_scan_path)
+
         self._build_ui()
         self._build_menu()
 
@@ -48,7 +55,8 @@ class MainWindow(QMainWindow):
 
         # ── Address bar (full width, above the splitter) ──────────────────
         addr_row = QHBoxLayout()
-        self._lbl_path = QLabel("パス:")
+        self._lbl_drive = QLabel("—")
+        self._lbl_drive.setMinimumWidth(200)
         self._addr_bar = QLineEdit()
         self._addr_bar.setPlaceholderText("スキャンするフォルダのパスを入力...")
         self._addr_bar.returnPressed.connect(self._on_scan)
@@ -60,7 +68,7 @@ class MainWindow(QMainWindow):
         self._lbl_scan_time = QLabel("—")
         self._lbl_scan_time.setMinimumWidth(64)
         self._lbl_scan_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        addr_row.addWidget(self._lbl_path)
+        addr_row.addWidget(self._lbl_drive)
         addr_row.addWidget(self._addr_bar, stretch=1)
         addr_row.addWidget(self._btn_browse)
         addr_row.addWidget(self._btn_scan)
@@ -171,22 +179,25 @@ class MainWindow(QMainWindow):
             self._worker.wait(2000)
 
         self._act_report.setEnabled(False)
+        self._update_drive_label(path)
         self._lbl_scan_time.setText("計測中...")
         self._source_model.update_root(self._make_placeholder(path))
         self._configure_columns()
         self._set_scanning(True, path)
         self._scan_time = datetime.now()
         self._worker = ScanWorker(path, self, cache=self._scan_cache)
-        self._worker.entry_scanned.connect(self._on_entry_scanned)
         self._worker.scan_finished.connect(self._on_scan_finished)
         self._worker.scan_error.connect(self._on_scan_error)
         self._worker.start()
 
-    def _on_entry_scanned(self, path: str):
-        short = path if len(path) <= 60 else "…" + path[-57:]
-        self._lbl_status.setText(
-            f"{self._spinner_chars[self._spinner_idx]}  スキャン中: {short}"
-        )
+    def _poll_scan_path(self) -> None:
+        if self._worker and self._worker.isRunning():
+            path = self._worker.current_path
+            if path:
+                short = path if len(path) <= 60 else "…" + path[-57:]
+                self._lbl_status.setText(
+                    f"{self._spinner_chars[self._spinner_idx]}  スキャン中: {short}"
+                )
 
     def _on_scan_finished(self, root: FolderEntry):
         elapsed = (datetime.now() - self._scan_time).total_seconds() if self._scan_time else 0.0
@@ -246,9 +257,22 @@ class MainWindow(QMainWindow):
         self._btn_browse.setEnabled(not scanning)
         if scanning:
             self._spinner_timer.start(100)
+            self._poll_timer.start()
             self._lbl_status.setText(f"スキャン開始: {path}")
         else:
             self._spinner_timer.stop()
+            self._poll_timer.stop()
+
+    def _update_drive_label(self, path: str) -> None:
+        try:
+            drive = os.path.splitdrive(path)[0] or path[:1]
+            drive_root = drive + "\\"
+            usage = shutil.disk_usage(drive_root)
+            used  = format_size(usage.used)
+            total = format_size(usage.total)
+            self._lbl_drive.setText(f"{drive_root}  {used} / {total}")
+        except OSError:
+            self._lbl_drive.setText("—")
 
     def _make_placeholder(self, path: str) -> FolderEntry:
         """Quick single-level scandir to show folder names before scan completes."""

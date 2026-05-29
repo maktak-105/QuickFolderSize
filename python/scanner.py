@@ -45,9 +45,13 @@ class ScanWorker(QThread):
     subdirectories — only directories whose mtime has changed are re-scanned.
     """
 
-    entry_scanned = pyqtSignal(str)    # currently scanning path
     scan_finished = pyqtSignal(object) # root FolderEntry
     scan_error    = pyqtSignal(str)
+
+    # Main thread polls this attribute via QTimer instead of using cross-thread
+    # signals.  Signal emissions from 8 parallel threads caused Qt event-queue
+    # lock contention that tripled scan time even with throttling.
+    current_path: str = ""
 
     def __init__(self, root_path: str, parent=None,
                  cache: dict[str, FolderEntry] | None = None):
@@ -55,6 +59,7 @@ class ScanWorker(QThread):
         self._root_path = root_path
         self._cancelled = False
         self._cache: dict[str, FolderEntry] = cache or {}
+        self.current_path = ""
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -70,7 +75,7 @@ class ScanWorker(QThread):
     # ── root: always re-read direct entries, dispatch subdirs in parallel ──
 
     def _scan_root(self, path: str) -> FolderEntry:
-        self.entry_scanned.emit(path)
+        self.current_path = path
         node = FolderEntry(name=os.path.basename(path) or path, path=path)
 
         try:
@@ -134,6 +139,8 @@ class ScanWorker(QThread):
         if self._cancelled:
             return FolderEntry(name=os.path.basename(path), path=path)
 
+        self.current_path = path  # before stat — restores original GIL release pattern
+
         try:
             mtime_ts = os.stat(path).st_mtime
         except OSError:
@@ -142,13 +149,9 @@ class ScanWorker(QThread):
             return node
 
         cached = self._cache.get(path)
-        # Compare raw st_mtime floats with 1 ms tolerance — avoids spurious mismatches
-        # from NTFS 100 ns timestamps being truncated by the datetime roundtrip.
         if cached is not None and abs(cached._mtime_raw - mtime_ts) < 0.001:
-            # Cache hit: don't emit entry_scanned so the status bar stays quiet.
             return self._from_cache(cached, parent, mtime_ts)
 
-        self.entry_scanned.emit(path)
         return self._full_scan(path, parent, mtime_ts)
 
     def _from_cache(self, cached: FolderEntry, parent: FolderEntry | None,
