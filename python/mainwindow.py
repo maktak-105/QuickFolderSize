@@ -29,6 +29,7 @@ class MainWindow(QMainWindow):
         self._current_root: FolderEntry | None = None
         self._scan_time: datetime | None = None
         self._scan_cache: dict[str, FolderEntry] = {}
+        self._scanned_root_path: str = ""   # 最後にスキャンしたルートパス
 
         self._spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
         self._spinner_idx = 0
@@ -154,9 +155,26 @@ class MainWindow(QMainWindow):
 
     def _on_nav_clicked(self, index):
         path = self._nav_model.path_for(index)
-        if path and os.path.isdir(path):
-            self._addr_bar.setText(path)
-            self._on_scan()
+        if not path or not os.path.isdir(path):
+            return
+        self._addr_bar.setText(path)
+        # スキャン済みルート配下（同一または子パス）なら既存データで右ペインを更新
+        if self._scanned_root_path:
+            norm_path = os.path.normcase(path)
+            norm_root_exact = os.path.normcase(self._scanned_root_path)
+            norm_root_prefix = norm_root_exact.rstrip(os.sep) + os.sep
+            if norm_path == norm_root_exact or norm_path.startswith(norm_root_prefix):
+                entry = self._scan_cache.get(path) or self._scan_cache.get(
+                    next((k for k in self._scan_cache
+                          if os.path.normcase(k) == norm_path), "")
+                )
+                if entry is not None:
+                    self._source_model.update_root(entry)
+                    self._configure_columns()
+                    self._proxy.sort(COL_SIZE, Qt.SortOrder.DescendingOrder)
+                    self._update_drive_label(path)
+                return
+        self._on_scan()
 
     def _on_browse(self):
         path = QFileDialog.getExistingDirectory(
@@ -185,7 +203,9 @@ class MainWindow(QMainWindow):
         self._configure_columns()
         self._set_scanning(True, path)
         self._scan_time = datetime.now()
+        self._scanned_root_path = path
         self._worker = ScanWorker(path, self, cache=self._scan_cache)
+        self._worker.scan_progress.connect(self._on_scan_progress)
         self._worker.scan_finished.connect(self._on_scan_finished)
         self._worker.scan_error.connect(self._on_scan_error)
         self._worker.start()
@@ -198,6 +218,11 @@ class MainWindow(QMainWindow):
                 self._lbl_status.setText(
                     f"{self._spinner_chars[self._spinner_idx]}  スキャン中: {short}"
                 )
+
+    def _on_scan_progress(self, child: FolderEntry) -> None:
+        """Called as each top-level directory finishes — updates tree incrementally."""
+        self._source_model.replace_root_child(child)
+        self._proxy.invalidate()   # re-sort so finished dirs slot into correct position
 
     def _on_scan_finished(self, root: FolderEntry):
         elapsed = (datetime.now() - self._scan_time).total_seconds() if self._scan_time else 0.0

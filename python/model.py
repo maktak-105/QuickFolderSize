@@ -38,6 +38,27 @@ class FolderModel(QAbstractItemModel):
         self._root = root
         self.endResetModel()
 
+    def replace_root_child(self, new_child: FolderEntry) -> None:
+        """Replace the matching top-level child (by path) with a scanned result.
+
+        Updates root.size / root.file_count so ratio bars reflect partial totals,
+        then emits dataChanged for all top-level rows so ratios repaint correctly.
+        """
+        children = self._root.children
+        for i, child in enumerate(children):
+            if child.path == new_child.path:
+                new_child.parent = self._root
+                self._root.size       += new_child.size
+                self._root.file_count += new_child.file_count
+                children[i] = new_child
+                # Repaint all top-level rows — ratios depend on root.size which changed
+                if children:
+                    self.dataChanged.emit(
+                        self.index(0, 0),
+                        self.index(len(children) - 1, COLUMN_COUNT - 1),
+                    )
+                return
+
     # ── QAbstractItemModel interface ──────────────────────────────────────
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:

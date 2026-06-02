@@ -1,0 +1,8 @@
+# PyInstaller
+build/
+__pycache__/
+*.pyc
+
+# dist 内のバイナリ（フォルダ構造だけ管理）
+dist/*/
+!dist/.gitkeep

@@ -6,8 +6,10 @@
 |:-----|:-----|
 | 目的 | ローカルドライブ・フォルダの使用容量を視覚的に把握する |
 | 対象OS | Windows 10 / 11 (64bit) |
-| 実装言語 | Python 3.11+ + PyQt6（プロトタイプ） → C++ Qt6（最終版） |
+| 実装言語 | Python 3.13+ + PyQt6（プロトタイプ） → C++ Qt6（最終版） |
 | 起動方法 | `cd folder_viewer/python && python main.py` |
+
+> 開発環境・ビルド手順 → `document/environment.md` を参照
 
 ---
 
@@ -46,12 +48,14 @@
 |:-----|:-----|
 | フォルダスキャン | 指定パス以下を再帰スキャン、フォルダ・ファイルを集計 |
 | バックグラウンドスキャン | QThread + ThreadPoolExecutor で UI をブロックしない |
-| 並列スキャン | ルート直下サブディレクトリを `ThreadPoolExecutor(max_workers=8)` で同時スキャン |
+| 3段階並列スキャン | depth別の独立ローカルプール（16/8/4 workers）でデッドロックなしに3レベル並列スキャン |
+| インクリメンタルUI更新 | トップレベルディレクトリ完了のたびに `scan_progress` シグナルでツリーを順次更新 |
 | mtime 差分キャッシュ | 前回スキャン結果を保持。再スキャン時は `os.stat().st_mtime` を比較し、変化のないディレクトリは `scandir()` をスキップしてキャッシュから返す |
 | プレースホルダー表示 | スキャン開始と同時に対象フォルダの直下1レベルをすぐに表示（サイズは空）。スキャン完了後に数値が埋まる |
 | スキャン時間表示 | アドレスバー右端にスキャン所要時間を `X.XXs` で表示 |
 | ドライブナビ | 左ペインにシステムドライブ一覧を表示（`GetLogicalDrives()`） |
 | フォルダ遅延展開 | ナビツリーはクリック時に初めて子フォルダをロード |
+| スキャン済みツリー内ナビ | スキャン済みルート配下のフォルダをナビクリックした場合、再スキャンせず `_scan_cache` から該当エントリを取得して右ペインを即時更新。F5または再スキャンボタンで明示的に再スキャン可能 |
 | ツリー表示 | フォルダ（📁）とファイル（📄）を混在でツリー表示 |
 | サイズバー | 親フォルダに対する割合をプログレスバーで可視化（COL_BAR 列） |
 | 列ソート | 各列ヘッダークリックで昇順/降順ソート |
@@ -63,27 +67,7 @@
 
 ---
 
-## 4. ファイル構成
-
-```
-folder_viewer/
-├── python/
-│   ├── main.py        エントリーポイント。QApplication 起動・Fusion テーマ適用
-│   ├── scanner.py     FolderEntry / build_cache / ScanWorker (QThread)
-│   ├── model.py       FolderModel (QAbstractItemModel) + SortProxyModel
-│   ├── delegate.py    SizeBarDelegate — COL_BAR 列にプログレスバー描画
-│   ├── navmodel.py    NavModel (QAbstractItemModel) — 左ナビペイン用ドライブ・フォルダツリー
-│   ├── mainwindow.py  MainWindow (QMainWindow) — UI 全体の組み立て
-│   └── utils.py       format_size() / generate_md_report()
-├── document/
-│   └── spec.md        本仕様書
-├── cpp/               C++ 移植用（Phase 2）
-└── build/             PyInstaller 出力先
-```
-
----
-
-## 5. データモデル
+## 4. データモデル
 
 ### FolderEntry（`scanner.py`）
 
@@ -119,7 +103,7 @@ folder_viewer/
 
 ---
 
-## 6. スキャン・キャッシュ動作フロー
+## 5. スキャン・キャッシュ動作フロー
 
 ```
 フォルダ選択
@@ -128,15 +112,20 @@ folder_viewer/
   │
   └─ ScanWorker 起動
        │
-       ├─ _scan_root(path)      # ルート直下を常に再読み込み
-       │    └─ ThreadPoolExecutor で各サブディレクトリを並列投入
+       ├─ _scan_root(path)           # depth=0。ルート直下を常に再読み込み
+       │    └─ ThreadPoolExecutor(16) で各サブディレクトリを並列投入（depth=1）
+       │         │
+       │         ├─ 完了のたびに scan_progress(child) emit → UI即時更新
+       │         └─ 全完了後に scan_finished(root) emit
        │
-       └─ _scan_dir(subdir)
+       └─ _scan_dir(subdir, depth)
             ├─ os.stat().st_mtime を取得
             ├─ キャッシュあり & |cached._mtime_raw - mtime| < 0.001
-            │    └─ _from_cache()  # scandir スキップ、子ディレクトリは再帰チェック
+            │    └─ _from_cache()
+            │         └─ _scan_children(paths, depth)  # depth=1→8並列, 2→4並列, 3+→直列
             └─ キャッシュなし / mtime 変化
-                 └─ _full_scan()   # 通常の完全再帰スキャン
+                 └─ _full_scan()
+                      └─ _scan_children(paths, depth)  # 同上
 
 完了
   │
@@ -146,7 +135,7 @@ folder_viewer/
 
 ---
 
-## 7. ツリービュー列定義
+## 6. ツリービュー列定義
 
 右スキャンツリーの列（`model.py`）:
 
@@ -169,7 +158,7 @@ folder_viewer/
 
 ---
 
-## 8. キーボードショートカット
+## 7. キーボードショートカット
 
 | ショートカット | 機能 |
 |:--------------|:-----|
@@ -181,7 +170,7 @@ folder_viewer/
 
 ---
 
-## 9. Markdown レポートフォーマット仕様
+## 8. Markdown レポートフォーマット仕様
 
 `ファイル > レポート作成` で生成されるファイルの構造:
 
@@ -219,43 +208,43 @@ folder_viewer/
 
 ---
 
-## 10. パフォーマンス最適化の詳細
+## 9. パフォーマンス
 
-### スキャン速度（初回）
-- **並列度**: ThreadPoolExecutor(max_workers=8) で root 直下のサブディレクトリを同時スキャン
-- **GIL パターン**: `self.current_path = path` → `os.stat()` の順で、I/O 後に複数スレッドが GIL を競合
-- **ポーリング方式**: ワーカースレッドからのクロススレッドシグナルを廃止。メインスレッドが 150ms 周期で `worker.current_path` を読み取る。これにより Qt イベントキューへのロック競合を完全に排除し、60-70s の高速スキャンを実現
+### スキャン速度（参考値・C:\、コールドキャッシュ）
+
+| 条件 | 時間 |
+|:-----|:-----|
+| 初回（OSディスクキャッシュ冷） | 50〜150s（環境依存） |
+| 2回目以降（OSディスクキャッシュ温） | 50s 程度 |
+| 再スキャン（mtimeキャッシュあり） | 20s 程度 |
+
+> 初回スキャン時間はOSのディスクキャッシュ状態に大きく依存する。Windowsの未署名EXEはDefenderのリアルタイムスキャン対象になる場合があり、除外リストへの追加で短縮できる。
+
+### 並列化設計
+
+depth別に独立したローカル `ThreadPoolExecutor` を使用。プールを共有しないためデッドロックなし。
+
+| depth | 対象 | workers |
+|:------|:-----|:--------|
+| 0 | `_scan_root`（ルート直下） | 16 |
+| 1 | `_scan_children`（各サブフォルダ直下） | 8 |
+| 2 | `_scan_children`（さらにその下） | 4 |
+| 3以降 | 直列再帰 | — |
+
+- **インクリメンタル更新**: `scan_progress` シグナルをトップレベルdir完了のたびに emit。`Windows`（約40s）など早く終わったフォルダは `Users`（最長）の完了を待たずツリーに反映される
+- **ポーリング方式**: ワーカーからのクロススレッドシグナルを廃止。メインスレッドが 150ms 周期で `worker.current_path` を読み取ることで Qt イベントキューのロック競合を排除
 
 ### キャッシュ（再スキャン）
-- `_mtime_raw` で NTFS 100ns 精度の mtime を保存
-- キャッシュヒット時は `scandir()` をスキップ → 20s 程度に短縮
+
+- `_mtime_raw` で NTFS 100ns 精度の mtime を保持
+- キャッシュヒット時は `scandir()` をスキップ
 
 ---
 
-## 11. 今後の実装予定
-
-### スキャン速度改善（追加検討）
+## 10. 今後の実装予定
 
 | 案 | 内容 |
 |:---|:-----|
-| 深さ制限＋遅延展開 | depth パラメータ追加。depth >= N は展開クリック時にスキャン |
 | 除外フィルター UI | `node_modules` / `.git` / `AppData\Local\Temp` をスキップするオプション |
-
-### Phase 2: C++ Qt6 移植
-
-| Python | C++ |
-|:-------|:----|
-| `os.scandir()` | `FindFirstFileW / FindNextFileW` |
-| `ThreadPoolExecutor` | `QThreadPool + QRunnable` |
-| `mtime` キャッシュ | `FILETIME` 比較（Win32 API） |
-| `QAbstractItemModel` サブクラス | 同一 API |
-| `QStyledItemDelegate` | 同一 API |
-| `PyInstaller --onefile` | `windeployqt` + 静的リンク or NSIS |
-
-### Phase 3: EXE パッケージング（Python版）
-
-```powershell
-pip install pyinstaller
-pyinstaller --onefile --windowed --name folder_viewer python/main.py
-# → dist/folder_viewer.exe
-```
+| 深さ制限＋遅延展開 | depth パラメータ追加。depth >= N は展開クリック時にスキャン |
+| C++ Qt6 移植 | `document/environment.md` の Phase 3 欄を参照 |
