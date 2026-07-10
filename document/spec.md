@@ -48,7 +48,8 @@
 |:-----|:-----|
 | フォルダスキャン | 指定パス以下を再帰スキャン、フォルダ・ファイルを集計 |
 | バックグラウンドスキャン | QThread + ThreadPoolExecutor で UI をブロックしない |
-| 3段階並列スキャン | depth別の独立ローカルプール（16/8/4 workers）でデッドロックなしに3レベル並列スキャン |
+| 全深度並列スキャン | 単一の共有 ThreadPoolExecutor（最大32 workers）に全ディレクトリを非ブロッキングコールバック方式で投入。depthで並列度が落ちないため深い階層（AppData配下など）も並列化される |
+| ジャンクション対策 | NTFSジャンクション／マウントポイントを検出して再帰から除外。循環参照によるハングや別ボリューム巻き込みを防止 |
 | インクリメンタルUI更新 | トップレベルディレクトリ完了のたびに `scan_progress` シグナルでツリーを順次更新 |
 | mtime 差分キャッシュ | 前回スキャン結果を保持。再スキャン時は `os.stat().st_mtime` を比較し、変化のないディレクトリは `scandir()` をスキップしてキャッシュから返す |
 | プレースホルダー表示 | スキャン開始と同時に対象フォルダの直下1レベルをすぐに表示（サイズは空）。スキャン完了後に数値が埋まる |
@@ -112,26 +113,29 @@
   │
   └─ ScanWorker 起動
        │
-       ├─ _scan_root(path)           # depth=0。ルート直下を常に再読み込み
-       │    └─ ThreadPoolExecutor(16) で各サブディレクトリを並列投入（depth=1）
-       │         │
-       │         ├─ 完了のたびに scan_progress(child) emit → UI即時更新
-       │         └─ 全完了後に scan_finished(root) emit
-       │
-       └─ _scan_dir(subdir, depth)
-            ├─ os.stat().st_mtime を取得
-            ├─ キャッシュあり & |cached._mtime_raw - mtime| < 0.001
-            │    └─ _from_cache()
-            │         └─ _scan_children(paths, depth)  # depth=1→8並列, 2→4並列, 3+→直列
-            └─ キャッシュなし / mtime 変化
-                 └─ _full_scan()
-                      └─ _scan_children(paths, depth)  # 同上
+       └─ 単一の共有 ThreadPoolExecutor（最大32 workers）に _scan_root_task を投入
+            │
+            ├─ ルート直下を常に再読み込み。サブディレクトリごとに
+            │    _scan_node_async() を投入（ブロック待ちしない）
+            │
+            └─ 各ディレクトリタスク（_scan_node_task）
+                 ├─ os.stat().st_mtime を取得
+                 ├─ キャッシュあり & |cached._mtime_raw - mtime| < 0.001
+                 │    └─ _from_cache_async() → _fan_out()（子を同じプールへ投入）
+                 └─ キャッシュなし / mtime 変化
+                      └─ _full_scan_async() → _fan_out()（同上）
+                 │
+                 └─ 全子タスク完了（コールバックでカウントダウン）で on_done()
+                      → トップレベルdir完了時は scan_progress(child) emit → UI即時更新
+                      → ルート全完了で scan_finished(root) emit
 
 完了
   │
-  ├─ _scan_cache.update(build_cache(root))  # 次回用にキャッシュ更新
+  ├─ _scan_cache = build_cache(root)  # 次回用にキャッシュを置き換え（累積させない）
   └─ スキャン時間ラベルを更新
 ```
+
+並列スキャン中に発見したディレクトリエントリは、NTFSジャンクション／マウントポイントを`_is_real_dir()`で除外してから再帰対象に加える（`is_dir()`判定を先に行い、ファイルエントリでは symlink/junction チェックをスキップする）。
 
 ---
 
@@ -222,15 +226,10 @@
 
 ### 並列化設計
 
-depth別に独立したローカル `ThreadPoolExecutor` を使用。プールを共有しないためデッドロックなし。
+単一の共有 `ThreadPoolExecutor`（最大32 workers）を全深度・全ディレクトリで共有する。ワーカーは子ディレクトリの完了を `as_completed()` 等でブロック待ちせず、完了時に呼ばれるコールバック（`_fan_out()`）で自分のタスクを終えてすぐプールに戻る。そのためキュー待ちのタスクがあれば別のワーカーがすぐ拾える＝depthに関わらず並列度が落ちない。
 
-| depth | 対象 | workers |
-|:------|:-----|:--------|
-| 0 | `_scan_root`（ルート直下） | 16 |
-| 1 | `_scan_children`（各サブフォルダ直下） | 8 |
-| 2 | `_scan_children`（さらにその下） | 4 |
-| 3以降 | 直列再帰 | — |
-
+- **旧設計（depth別に独立ローカルプール、depth 3以降は直列）からの変更理由**: depth 3以降を直列にしていたため、`AppData` 配下のように深い階層に大量のディレクトリがあるツリーで並列化の恩恵を受けられず、体感速度の低下につながっていた
+- **デッドロック回避**: 単一プールを共有していても、ワーカーが他タスクの完了をブロック待ちしない設計（コールバック方式）のため、全ワーカーが子タスク待ちで固まる状態は発生しない
 - **インクリメンタル更新**: `scan_progress` シグナルをトップレベルdir完了のたびに emit。`Windows`（約40s）など早く終わったフォルダは `Users`（最長）の完了を待たずツリーに反映される
 - **ポーリング方式**: ワーカーからのクロススレッドシグナルを廃止。メインスレッドが 150ms 周期で `worker.current_path` を読み取ることで Qt イベントキューのロック競合を排除
 
@@ -238,6 +237,7 @@ depth別に独立したローカル `ThreadPoolExecutor` を使用。プール�
 
 - `_mtime_raw` で NTFS 100ns 精度の mtime を保持
 - キャッシュヒット時は `scandir()` をスキップ
+- スキャン完了ごとに `_scan_cache` を置き換え（`build_cache(root)` で作り直す）、蓄積させない。異なるルートを繰り返しスキャンしてもメモリが際限なく増えないようにするため
 
 ---
 
