@@ -106,7 +106,9 @@ class NavModel(QAbstractItemModel):
             with os.scandir(node.path) as it:
                 for entry in it:
                     try:
-                        if entry.is_dir(follow_symlinks=False) and not entry.is_symlink():
+                        if not entry.is_dir(follow_symlinks=False):
+                            continue
+                        if not entry.is_symlink() and not entry.is_junction():
                             children.append(NavNode(name=entry.name, path=entry.path, parent=node))
                     except OSError:
                         pass

@@ -1,16 +1,29 @@
 from __future__ import annotations
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-# Parallelize at depth 0 (root, _scan_root), 1, 2 only.
-# Each level uses an independent local pool — no shared pool, no deadlock.
-# Depth 3+ falls back to serial recursion to avoid thread explosion.
-_ROOT_WORKERS = 16
-_DEPTH_WORKERS = {1: 8, 2: 4}   # workers for depth 1 and 2 in _full_scan/_from_cache
+# Single shared pool used for every directory at every depth. Workers never
+# block waiting on another task submitted to this same pool (see _fan_out) —
+# each task either finishes immediately or fans out to children and returns,
+# so there is no deadlock risk, and the OS thread count stays bounded by
+# _MAX_WORKERS regardless of tree depth or width.
+_MAX_WORKERS = 32
+
+
+def _is_real_dir(entry: os.DirEntry) -> bool:
+    """True if entry is a directory that is safe to recurse into.
+
+    Excludes symlinks and NTFS junctions/mount points. is_dir() is checked
+    first so the symlink/junction checks are skipped for file entries.
+    """
+    if not entry.is_dir(follow_symlinks=False):
+        return False
+    return not entry.is_symlink() and not entry.is_junction()
 
 
 @dataclass
@@ -18,20 +31,17 @@ class FolderEntry:
     name: str
     path: str
     size: int = 0
-    file_count: int = 0          # recursive total
+    file_count: int = 0
     modified: datetime = field(default_factory=datetime.now)
     is_accessible: bool = True
-    is_dir: bool = True          # False for file leaf nodes
+    is_dir: bool = True
     children: list["FolderEntry"] = field(default_factory=list)
     parent: "FolderEntry | None" = field(default=None, repr=False, compare=False)
     loaded: bool = False
-    # Raw st_mtime float stored for cache comparison — avoids datetime roundtrip
-    # precision loss (NTFS has 100 ns resolution; datetime truncates to microseconds).
     _mtime_raw: float = field(default=0.0, repr=False, compare=False)
 
 
 def build_cache(root: FolderEntry) -> dict[str, FolderEntry]:
-    """Walk scan result and return path → FolderEntry for directory nodes."""
     cache: dict[str, FolderEntry] = {}
 
     def _walk(node: FolderEntry) -> None:
@@ -45,34 +55,13 @@ def build_cache(root: FolderEntry) -> dict[str, FolderEntry]:
 
 
 class ScanWorker(QThread):
-    """Recursively scans a directory in a background thread.
+    """Single shared pool, non-blocking callback fan-out — parallel at every
+    depth instead of capping at depth 2."""
 
-    Signals
-    -------
-    scan_progress(FolderEntry)
-        Emitted each time one top-level child completes. Enables incremental
-        UI updates so the tree fills in as dirs finish rather than all at once.
-    scan_finished(FolderEntry)
-        Emitted once when the entire scan is done (full root).
-    scan_error(str)
-        Emitted on unhandled exception.
-
-    Parallelism
-    -----------
-    Uses independent local ThreadPoolExecutors per level to avoid deadlock:
-      depth 0  – _scan_root        – _ROOT_WORKERS (16)
-      depth 1  – _full_scan/cache  – 8 workers (local pool per dir)
-      depth 2  – _full_scan/cache  – 4 workers (local pool per dir)
-      depth 3+ – serial recursion
-    """
-
-    scan_progress = pyqtSignal(object)  # FolderEntry for one top-level child
-    scan_finished = pyqtSignal(object)  # root FolderEntry
+    scan_progress = pyqtSignal(object)
+    scan_finished = pyqtSignal(object)
     scan_error    = pyqtSignal(str)
 
-    # Main thread polls this attribute via QTimer instead of using cross-thread
-    # signals.  Signal emissions from parallel threads caused Qt event-queue
-    # lock contention that tripled scan time even with throttling.
     current_path: str = ""
 
     def __init__(self, root_path: str, parent=None,
@@ -82,21 +71,32 @@ class ScanWorker(QThread):
         self._cancelled = False
         self._cache: dict[str, FolderEntry] = cache or {}
         self.current_path = ""
+        self._pool: ThreadPoolExecutor | None = None
 
     def cancel(self) -> None:
         self._cancelled = True
 
     def run(self) -> None:
         try:
-            root = self._scan_root(self._root_path)
+            done = threading.Event()
+            result: dict[str, FolderEntry] = {}
+            self._pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
+            try:
+                def on_root_done(root: FolderEntry) -> None:
+                    result["root"] = root
+                    done.set()
+
+                self._pool.submit(self._scan_root_task, self._root_path, on_root_done)
+                done.wait()
+            finally:
+                self._pool.shutdown(wait=False)
+
             if not self._cancelled:
-                self.scan_finished.emit(root)
+                self.scan_finished.emit(result["root"])
         except Exception as exc:
             self.scan_error.emit(str(exc))
 
-    # ── root: always re-read direct entries, dispatch subdirs in parallel ──
-
-    def _scan_root(self, path: str) -> FolderEntry:
+    def _scan_root_task(self, path: str, on_done) -> None:
         self.current_path = path
         node = FolderEntry(name=os.path.basename(path) or path, path=path)
 
@@ -112,9 +112,10 @@ class ScanWorker(QThread):
         except (PermissionError, OSError):
             node.is_accessible = False
             node.loaded = True
-            return node
+            on_done(node)
+            return
 
-        dirs  = [e for e in raw if not e.is_symlink() and e.is_dir(follow_symlinks=False)]
+        dirs  = [e for e in raw if _is_real_dir(e)]
         files = [e for e in raw if not e.is_symlink() and e.is_file(follow_symlinks=False)]
 
         for e in files:
@@ -133,33 +134,45 @@ class ScanWorker(QThread):
             except (PermissionError, OSError):
                 pass
 
+        file_children = list(node.children)
+
+        if not dirs or self._cancelled:
+            node.loaded = True
+            on_done(node)
+            return
+
+        pending = len(dirs)
+        lock = threading.Lock()
         dir_children: list[FolderEntry] = []
-        workers = min(_ROOT_WORKERS, max(1, len(dirs)))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self._scan_dir, e.path, node, 1): e for e in dirs}
-            for future in as_completed(futures):
-                if self._cancelled:
-                    break
-                try:
-                    child = future.result()
-                    node.size       += child.size
-                    node.file_count += child.file_count
-                    dir_children.append(child)
-                    self.scan_progress.emit(child)   # incremental UI update
-                except Exception:
-                    pass
 
-        dir_children.sort(key=lambda c: c.size, reverse=True)
-        node.children = dir_children + [c for c in node.children if not c.is_dir]
-        node.loaded = True
-        return node
+        def child_done(child: FolderEntry) -> None:
+            nonlocal pending
+            with lock:
+                node.size       += child.size
+                node.file_count += child.file_count
+                dir_children.append(child)
+                pending -= 1
+                finished = pending == 0
+            self.scan_progress.emit(child)
+            if finished:
+                dir_children.sort(key=lambda c: c.size, reverse=True)
+                node.children = dir_children + file_children
+                node.loaded = True
+                on_done(node)
 
-    # ── per-directory: cache check → reuse or full scan ───────────────────
+        for e in dirs:
+            self._scan_node_async(e.path, node, child_done)
 
-    def _scan_dir(self, path: str, parent: FolderEntry | None,
-                  depth: int) -> FolderEntry:
+    def _scan_node_async(self, path: str, parent: FolderEntry | None, on_done) -> None:
         if self._cancelled:
-            return FolderEntry(name=os.path.basename(path), path=path)
+            on_done(FolderEntry(name=os.path.basename(path), path=path, parent=parent))
+            return
+        self._pool.submit(self._scan_node_task, path, parent, on_done)
+
+    def _scan_node_task(self, path: str, parent: FolderEntry | None, on_done) -> None:
+        if self._cancelled:
+            on_done(FolderEntry(name=os.path.basename(path), path=path, parent=parent))
+            return
 
         self.current_path = path
 
@@ -168,22 +181,20 @@ class ScanWorker(QThread):
         except OSError:
             node = FolderEntry(name=os.path.basename(path) or path, path=path, parent=parent)
             node.is_accessible = False
-            return node
+            on_done(node)
+            return
 
         cached = self._cache.get(path)
         if cached is not None and abs(cached._mtime_raw - mtime_ts) < 0.001:
-            return self._from_cache(cached, parent, mtime_ts, depth)
+            self._from_cache_async(cached, parent, mtime_ts, on_done)
+        else:
+            self._full_scan_async(path, parent, mtime_ts, on_done)
 
-        return self._full_scan(path, parent, mtime_ts, depth)
-
-    def _from_cache(self, cached: FolderEntry, parent: FolderEntry | None,
-                    mtime_ts: float, depth: int) -> FolderEntry:
-        """Rebuild node from cache, recursing into subdirs to check their mtimes."""
+    def _from_cache_async(self, cached: FolderEntry, parent: FolderEntry | None,
+                          mtime_ts: float, on_done) -> None:
         node = FolderEntry(
-            name=cached.name,
-            path=cached.path,
-            modified=datetime.fromtimestamp(mtime_ts),
-            parent=parent,
+            name=cached.name, path=cached.path,
+            modified=datetime.fromtimestamp(mtime_ts), parent=parent,
         )
         node._mtime_raw = mtime_ts
 
@@ -196,26 +207,23 @@ class ScanWorker(QThread):
                 node.size       += fe.size
                 node.file_count += 1
                 file_children.append(fe)
-
-        cached_dirs = [c for c in cached.children if c.is_dir and not self._cancelled]
-        dir_children = self._scan_children(
-            [c.path for c in cached_dirs], node, depth
-        )
-
-        dir_children.sort(key=lambda c: c.size, reverse=True)
         file_children.sort(key=lambda c: c.size, reverse=True)
-        node.children = dir_children + file_children
-        node.loaded = True
-        return node
 
-    def _full_scan(self, path: str, parent: FolderEntry | None,
-                   mtime_ts: float, depth: int) -> FolderEntry:
-        """Full recursive scan — used when cache is absent or mtime changed."""
+        cached_dirs = [c for c in cached.children if c.is_dir]
+
+        if not cached_dirs or self._cancelled:
+            node.children = file_children
+            node.loaded = True
+            on_done(node)
+            return
+
+        self._fan_out([c.path for c in cached_dirs], node, file_children, on_done)
+
+    def _full_scan_async(self, path: str, parent: FolderEntry | None,
+                         mtime_ts: float, on_done) -> None:
         node = FolderEntry(
-            name=os.path.basename(path) or path,
-            path=path,
-            modified=datetime.fromtimestamp(mtime_ts),
-            parent=parent,
+            name=os.path.basename(path) or path, path=path,
+            modified=datetime.fromtimestamp(mtime_ts), parent=parent,
         )
         node._mtime_raw = mtime_ts
 
@@ -224,9 +232,10 @@ class ScanWorker(QThread):
         except (PermissionError, OSError):
             node.is_accessible = False
             node.loaded = True
-            return node
+            on_done(node)
+            return
 
-        dirs  = [e for e in raw if not e.is_symlink() and e.is_dir(follow_symlinks=False)]
+        dirs  = [e for e in raw if _is_real_dir(e)]
         files = [e for e in raw if not e.is_symlink() and e.is_file(follow_symlinks=False)]
 
         file_children: list[FolderEntry] = []
@@ -250,56 +259,35 @@ class ScanWorker(QThread):
                 file_children.append(fe)
             except (PermissionError, OSError):
                 pass
-
-        dir_children = self._scan_children(
-            [e.path for e in dirs], node, depth
-        )
-
-        dir_children.sort(key=lambda c: c.size, reverse=True)
         file_children.sort(key=lambda c: c.size, reverse=True)
-        node.children = dir_children + file_children
-        node.loaded = True
-        return node
 
-    # ── core dispatcher: parallel (local pool) or serial based on depth ───
+        if not dirs or self._cancelled:
+            node.children = file_children
+            node.loaded = True
+            on_done(node)
+            return
 
-    def _scan_children(self, paths: list[str], parent: FolderEntry,
-                       depth: int) -> list[FolderEntry]:
-        """Scan child directories, in parallel or serially depending on depth.
+        self._fan_out([e.path for e in dirs], node, file_children, on_done)
 
-        Uses an independent local ThreadPoolExecutor so no deadlock can occur
-        between levels. Children at depth >= 3 recurse serially.
-        """
-        children: list[FolderEntry] = []
-        if not paths or self._cancelled:
-            return children
+    def _fan_out(self, dir_paths: list[str], node: FolderEntry,
+                file_children: list[FolderEntry], on_done) -> None:
+        pending = len(dir_paths)
+        lock = threading.Lock()
+        dir_children: list[FolderEntry] = []
 
-        workers = _DEPTH_WORKERS.get(depth, 0)
+        def child_done(child: FolderEntry) -> None:
+            nonlocal pending
+            with lock:
+                node.size       += child.size
+                node.file_count += child.file_count
+                dir_children.append(child)
+                pending -= 1
+                finished = pending == 0
+            if finished:
+                dir_children.sort(key=lambda c: c.size, reverse=True)
+                node.children = dir_children + file_children
+                node.loaded = True
+                on_done(node)
 
-        if workers > 0:
-            w = min(workers, len(paths))
-            with ThreadPoolExecutor(max_workers=w) as pool:
-                futures = {
-                    pool.submit(self._scan_dir, p, parent, depth + 1): p
-                    for p in paths
-                }
-                for future in as_completed(futures):
-                    if self._cancelled:
-                        break
-                    try:
-                        child = future.result()
-                        parent.size       += child.size
-                        parent.file_count += child.file_count
-                        children.append(child)
-                    except Exception:
-                        pass
-        else:
-            for p in paths:
-                if self._cancelled:
-                    break
-                child = self._scan_dir(p, parent, depth + 1)
-                parent.size       += child.size
-                parent.file_count += child.file_count
-                children.append(child)
-
-        return children
+        for p in dir_paths:
+            self._scan_node_async(p, node, child_done)

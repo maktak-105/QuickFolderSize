@@ -29,6 +29,7 @@ class MainWindow(QMainWindow):
         self._current_root: FolderEntry | None = None
         self._scan_time: datetime | None = None
         self._scan_cache: dict[str, FolderEntry] = {}
+        self._scan_cache_norm: dict[str, FolderEntry] = {}   # normcase(path) -> entry, O(1) lookup
         self._scanned_root_path: str = ""   # 最後にスキャンしたルートパス
 
         self._spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -164,10 +165,7 @@ class MainWindow(QMainWindow):
             norm_root_exact = os.path.normcase(self._scanned_root_path)
             norm_root_prefix = norm_root_exact.rstrip(os.sep) + os.sep
             if norm_path == norm_root_exact or norm_path.startswith(norm_root_prefix):
-                entry = self._scan_cache.get(path) or self._scan_cache.get(
-                    next((k for k in self._scan_cache
-                          if os.path.normcase(k) == norm_path), "")
-                )
+                entry = self._scan_cache_norm.get(norm_path)
                 if entry is not None:
                     self._source_model.update_root(entry)
                     self._configure_columns()
@@ -227,7 +225,10 @@ class MainWindow(QMainWindow):
     def _on_scan_finished(self, root: FolderEntry):
         elapsed = (datetime.now() - self._scan_time).total_seconds() if self._scan_time else 0.0
         self._current_root = root
-        self._scan_cache.update(build_cache(root))
+        # Rebuild (not accumulate) — bounds memory to the current tree instead
+        # of growing forever as the user scans one folder after another.
+        self._scan_cache = build_cache(root)
+        self._scan_cache_norm = {os.path.normcase(k): v for k, v in self._scan_cache.items()}
         self._set_scanning(False)
         self._source_model.update_root(root)
         self._configure_columns()

@@ -1,5 +1,4 @@
 from __future__ import annotations
-import os
 from datetime import datetime
 
 
@@ -10,30 +9,6 @@ def format_size(size_bytes: int) -> str:
         if size_bytes >= threshold:
             return f"{size_bytes / threshold:.1f} {unit}"
     return f"{size_bytes} B"
-
-
-def scan_entry_size(path: str) -> tuple[int, int]:
-    """Return (total_bytes, file_count). Skips inaccessible entries."""
-    total = 0
-    count = 0
-    try:
-        with os.scandir(path) as it:
-            for entry in it:
-                try:
-                    if entry.is_symlink():
-                        continue
-                    if entry.is_file(follow_symlinks=False):
-                        total += entry.stat(follow_symlinks=False).st_size
-                        count += 1
-                    elif entry.is_dir(follow_symlinks=False):
-                        sub_total, sub_count = scan_entry_size(entry.path)
-                        total += sub_total
-                        count += sub_count
-                except (PermissionError, OSError):
-                    pass
-    except (PermissionError, OSError):
-        pass
-    return total, count
 
 
 def generate_md_report(root, scan_time: datetime | None = None) -> str:
