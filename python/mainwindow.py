@@ -115,6 +115,9 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         root_layout.addWidget(splitter, stretch=1)
 
+        # 選択変更シグナルを接続
+        self._tree.selectionModel().selectionChanged.connect(self._on_tree_selection_changed)
+
         # ── Status bar ────────────────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
@@ -152,7 +155,44 @@ class MainWindow(QMainWindow):
         act_quit.triggered.connect(self.close)
         file_menu.addAction(act_quit)
 
+        # ── Help menu ─────────────────────────────────────────────────────
+        help_menu = menubar.addMenu("ヘルプ(&H)")
+
+        act_about = QAction("バージョン情報(&A)...", self)
+        act_about.triggered.connect(self._on_about)
+        help_menu.addAction(act_about)
+
     # ── slots ─────────────────────────────────────────────────────────────
+
+    def _on_about(self):
+        title = "バージョン情報"
+        text = (
+            "<h3>フォルダ使用容量ビューワー</h3>"
+            "<p><b>Ver. 2026-07-15</b></p>"
+            "<hr>"
+            "<p><b>【開発環境】</b><br>"
+            "・Python 3.13.12<br>"
+            "・PyQt6 >= 6.4.0 (GUIフレームワーク)<br>"
+            "・PyInstaller >= 6.0.0 (EXEパッケージング)<br>"
+            "・Pillow >= 10.0.0 (画像変換ライブラリ)</p>"
+            "<p><b>【標準ライブラリ】</b><br>"
+            "os, shutil, concurrent.futures, ctypes, string, dataclasses, datetime</p>"
+            "<p><b>【制作者】</b><br>"
+            "0120025-Z100</p>"
+        )
+        QMessageBox.about(self, title, text)
+
+    def _on_tree_selection_changed(self, selected, deselected):
+        indexes = selected.indexes()
+        if not indexes:
+            return
+        # 最初の列のインデックスを使用
+        index = indexes[0]
+        source_index = self._proxy.mapToSource(index)
+        if source_index.isValid():
+            node = source_index.internalPointer()
+            if node and node.path:
+                self._addr_bar.setText(node.path)
 
     def _on_nav_clicked(self, index):
         path = self._nav_model.path_for(index)

@@ -5,10 +5,20 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPalette, QColor
+from PyQt6.QtGui import QPalette, QColor, QIcon
 from PyQt6.QtCore import Qt
 
 from mainwindow import MainWindow
+
+
+def get_resource_path(relative_path: str) -> str:
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(__file__)
+    return os.path.join(base_path, relative_path)
 
 
 def apply_theme(app: QApplication):
@@ -28,6 +38,11 @@ def main():
     app.setApplicationName("FolderViewer")
     app.setOrganizationName("LocalTools")
     apply_theme(app)
+
+    # Set window icon
+    icon_path = get_resource_path("resources/icon.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     win = MainWindow()
     win.show()
