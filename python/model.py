@@ -8,6 +8,7 @@ from PyQt6.QtCore import QFileInfo
 
 from scanner import FolderEntry
 from utils import format_size
+from i18n import tr
 
 COL_NAME  = 0
 COL_SIZE  = 1
@@ -15,7 +16,10 @@ COL_BAR   = 2
 COL_FILES = 3
 COL_MTIME = 4
 COLUMN_COUNT = 5
-HEADERS = ["名前", "サイズ", "割合", "ファイル数", "更新日時"]
+
+
+def get_headers() -> list[str]:
+    return [tr("col_name"), tr("col_size"), tr("col_ratio"), tr("col_files"), tr("col_mtime")]
 
 # Plain int custom roles (avoids PyQt6 enum arithmetic issues)
 ROLE_SORT  = Qt.ItemDataRole.UserRole.value       # 256
@@ -128,7 +132,7 @@ class FolderModel(QAbstractItemModel):
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return HEADERS[section]
+            return get_headers()[section]
         return None
 
     # ── helpers ───────────────────────────────────────────────────────────

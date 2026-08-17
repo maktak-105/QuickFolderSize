@@ -15,10 +15,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/3] Moving output to dist\...
-xcopy /s /y /q dist_tmp\folder_viewer\* dist\
+echo [3/3] Moving output to dist\assets\...
+if not exist dist\assets mkdir dist\assets
+xcopy /s /y /q dist_tmp\folder_viewer\* dist\assets\
 rmdir /s /q dist_tmp
 
 echo.
 echo === Build complete ===
-echo Output: dist\folder_viewer.exe
+echo Output: dist\assets\folder_viewer.exe

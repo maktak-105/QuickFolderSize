@@ -1,6 +1,8 @@
 from __future__ import annotations
 from datetime import datetime
 
+from i18n import tr
+
 
 def format_size(size_bytes: int) -> str:
     if size_bytes < 0:
@@ -12,25 +14,25 @@ def format_size(size_bytes: int) -> str:
 
 
 def generate_md_report(root, scan_time: datetime | None = None) -> str:
-    """Generate a Markdown report from a FolderEntry tree."""
+    """Generate a Markdown report from a FolderEntry tree, in the current UI language."""
     if scan_time is None:
         scan_time = datetime.now()
 
     dir_count = sum(1 for c in root.children if c.is_dir)
     lines = [
-        "# フォルダ使用容量レポート",
+        tr("report_h1"),
         "",
-        f"| 項目 | 値 |",
+        f"| {tr('report_col_item')} | {tr('report_col_value')} |",
         f"|:-----|:---|",
-        f"| パス | `{root.path}` |",
-        f"| スキャン日時 | {scan_time:%Y/%m/%d %H:%M} |",
-        f"| 合計サイズ | {format_size(root.size)} |",
-        f"| サブフォルダ数 | {dir_count:,} |",
-        f"| ファイル数（再帰） | {root.file_count:,} |",
+        f"| {tr('report_path')} | `{root.path}` |",
+        f"| {tr('report_scan_datetime')} | {scan_time:%Y/%m/%d %H:%M} |",
+        f"| {tr('report_total_size')} | {format_size(root.size)} |",
+        f"| {tr('report_subfolder_count')} | {dir_count:,} |",
+        f"| {tr('report_file_count_recursive')} | {root.file_count:,} |",
         "",
-        "## フォルダ構成",
+        tr("report_h2_structure"),
         "",
-        "サイズ降順・階層表示。ファイルは各フォルダ内にインデントで記載。",
+        tr("report_structure_desc"),
         "",
     ]
 
@@ -41,7 +43,7 @@ def generate_md_report(root, scan_time: datetime | None = None) -> str:
             lines.append(
                 f"{indent}- 📁 **{node.name}**"
                 f" — {format_size(node.size)} ({ratio:.1f}%)"
-                f"  ファイル: {node.file_count:,}個"
+                f"  {tr('report_file_suffix', count=node.file_count)}"
             )
             for child in node.children:
                 _render(child, depth + 1, node.size)
@@ -54,5 +56,5 @@ def generate_md_report(root, scan_time: datetime | None = None) -> str:
     for child in root.children:
         _render(child, 0, root.size)
 
-    lines += ["", f"---", f"*生成日時: {datetime.now():%Y/%m/%d %H:%M:%S}*"]
+    lines += ["", f"---", f"*{tr('report_generated_at')}: {datetime.now():%Y/%m/%d %H:%M:%S}*"]
     return "\n".join(lines)

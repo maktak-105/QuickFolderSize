@@ -13,16 +13,17 @@ from PyQt6.QtWidgets import (
 )
 
 from scanner import FolderEntry, ScanWorker, build_cache
-from model import FolderModel, SortProxyModel, COL_BAR, COL_SIZE, ROLE_SORT
+from model import FolderModel, SortProxyModel, COL_BAR, COL_SIZE, COLUMN_COUNT, ROLE_SORT
 from delegate import SizeBarDelegate
 from navmodel import NavModel
 from utils import format_size, generate_md_report
+import i18n
+from i18n import tr
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("フォルダ使用容量ビューワー")
         self.resize(1200, 720)
 
         self._worker: ScanWorker | None = None
@@ -43,8 +44,15 @@ class MainWindow(QMainWindow):
         self._poll_timer.setInterval(150)
         self._poll_timer.timeout.connect(self._poll_scan_path)
 
+        # ── status / scan-time display state (re-rendered on language toggle) ──
+        self._status_kind = "idle"
+        self._status_data: dict = {}
+        self._scan_time_kind = "idle"   # idle | measuring | done
+        self._scan_time_elapsed: float = 0.0
+
         self._build_ui()
         self._build_menu()
+        self._retranslate_ui()
 
     # ── UI construction ───────────────────────────────────────────────────
 
@@ -60,21 +68,25 @@ class MainWindow(QMainWindow):
         self._lbl_drive = QLabel("—")
         self._lbl_drive.setMinimumWidth(200)
         self._addr_bar = QLineEdit()
-        self._addr_bar.setPlaceholderText("スキャンするフォルダのパスを入力...")
         self._addr_bar.returnPressed.connect(self._on_scan)
-        self._btn_browse = QPushButton("参照...")
+        self._btn_browse = QPushButton()
         self._btn_browse.clicked.connect(self._on_browse)
-        self._btn_scan = QPushButton("スキャン")
+        self._btn_scan = QPushButton()
         self._btn_scan.clicked.connect(self._on_scan)
         self._btn_scan.setDefault(True)
         self._lbl_scan_time = QLabel("—")
         self._lbl_scan_time.setMinimumWidth(64)
         self._lbl_scan_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._btn_lang = QPushButton()
+        self._btn_lang.setFixedWidth(64)
+        self._btn_lang.setToolTip("English / 日本語")
+        self._btn_lang.clicked.connect(self._on_toggle_lang)
         addr_row.addWidget(self._lbl_drive)
         addr_row.addWidget(self._addr_bar, stretch=1)
         addr_row.addWidget(self._btn_browse)
         addr_row.addWidget(self._btn_scan)
         addr_row.addWidget(self._lbl_scan_time)
+        addr_row.addWidget(self._btn_lang)
         root_layout.addLayout(addr_row)
 
         # ── Horizontal splitter: [nav tree] | [scan tree] ────────────────
@@ -121,66 +133,76 @@ class MainWindow(QMainWindow):
         # ── Status bar ────────────────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        self._lbl_status = QLabel("フォルダを選択してスキャンしてください")
+        self._lbl_status = QLabel()
         self._status.addWidget(self._lbl_status, 1)
 
     def _build_menu(self):
         menubar = self.menuBar()
 
         # ── File menu ─────────────────────────────────────────────────────
-        file_menu = menubar.addMenu("ファイル(&F)")
+        self._menu_file = menubar.addMenu("")
 
-        act_open = QAction("フォルダを開く(&O)...", self)
-        act_open.setShortcut(QKeySequence("Ctrl+O"))
-        act_open.triggered.connect(self._on_browse)
-        file_menu.addAction(act_open)
+        self._act_open = QAction(self)
+        self._act_open.setShortcut(QKeySequence("Ctrl+O"))
+        self._act_open.triggered.connect(self._on_browse)
+        self._menu_file.addAction(self._act_open)
 
-        act_rescan = QAction("再スキャン(&R)", self)
-        act_rescan.setShortcut(QKeySequence("F5"))
-        act_rescan.triggered.connect(self._on_scan)
-        file_menu.addAction(act_rescan)
+        self._act_rescan = QAction(self)
+        self._act_rescan.setShortcut(QKeySequence("F5"))
+        self._act_rescan.triggered.connect(self._on_scan)
+        self._menu_file.addAction(self._act_rescan)
 
-        file_menu.addSeparator()
+        self._menu_file.addSeparator()
 
-        self._act_report = QAction("レポート作成(&E)...", self)
+        self._act_report = QAction(self)
         self._act_report.setShortcut(QKeySequence("Ctrl+Shift+S"))
         self._act_report.setEnabled(False)
         self._act_report.triggered.connect(self._on_export_report)
-        file_menu.addAction(self._act_report)
+        self._menu_file.addAction(self._act_report)
 
-        file_menu.addSeparator()
+        self._menu_file.addSeparator()
 
-        act_quit = QAction("終了(&X)", self)
-        act_quit.setShortcut(QKeySequence("Ctrl+Q"))
-        act_quit.triggered.connect(self.close)
-        file_menu.addAction(act_quit)
+        self._act_quit = QAction(self)
+        self._act_quit.setShortcut(QKeySequence("Ctrl+Q"))
+        self._act_quit.triggered.connect(self.close)
+        self._menu_file.addAction(self._act_quit)
 
         # ── Help menu ─────────────────────────────────────────────────────
-        help_menu = menubar.addMenu("ヘルプ(&H)")
+        self._menu_help = menubar.addMenu("")
 
-        act_about = QAction("バージョン情報(&A)...", self)
-        act_about.triggered.connect(self._on_about)
-        help_menu.addAction(act_about)
+        self._act_about = QAction(self)
+        self._act_about.triggered.connect(self._on_about)
+        self._menu_help.addAction(self._act_about)
+
+    # ── i18n ──────────────────────────────────────────────────────────────
+
+    def _on_toggle_lang(self):
+        i18n.toggle_lang()
+        self._retranslate_ui()
+
+    def _retranslate_ui(self):
+        self.setWindowTitle(tr("window_title"))
+        self._addr_bar.setPlaceholderText(tr("addr_placeholder"))
+        self._btn_browse.setText(tr("btn_browse"))
+        self._btn_scan.setText(tr("btn_scan"))
+        self._btn_lang.setText(i18n.other_lang_label())
+
+        self._menu_file.setTitle(tr("menu_file"))
+        self._act_open.setText(tr("act_open"))
+        self._act_rescan.setText(tr("act_rescan"))
+        self._act_report.setText(tr("act_report"))
+        self._act_quit.setText(tr("act_quit"))
+        self._menu_help.setTitle(tr("menu_help"))
+        self._act_about.setText(tr("act_about"))
+
+        self._source_model.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, COLUMN_COUNT - 1)
+        self._render_status()
+        self._render_scan_time()
 
     # ── slots ─────────────────────────────────────────────────────────────
 
     def _on_about(self):
-        title = "バージョン情報"
-        text = (
-            "<h3>フォルダ使用容量ビューワー</h3>"
-            "<p><b>Ver. 2026-07-15</b></p>"
-            "<hr>"
-            "<p><b>【開発環境】</b><br>"
-            "・Python 3.13.12<br>"
-            "・PyQt6 >= 6.4.0 (GUIフレームワーク)<br>"
-            "・PyInstaller >= 6.0.0 (EXEパッケージング)<br>"
-            "・Pillow >= 10.0.0 (画像変換ライブラリ)</p>"
-            "<p><b>【標準ライブラリ】</b><br>"
-            "os, shutil, concurrent.futures, ctypes, string, dataclasses, datetime</p>"
-            "<p><b>【制作者】</b><br>"
-            "0120025-Z100</p>"
-        )
-        QMessageBox.about(self, title, text)
+        QMessageBox.about(self, tr("about_title"), tr("about_html", version=i18n.APP_VERSION))
 
     def _on_tree_selection_changed(self, selected, deselected):
         indexes = selected.indexes()
@@ -216,7 +238,7 @@ class MainWindow(QMainWindow):
 
     def _on_browse(self):
         path = QFileDialog.getExistingDirectory(
-            self, "フォルダを選択", self._addr_bar.text() or "C:\\"
+            self, tr("dlg_browse_title"), self._addr_bar.text() or "C:\\"
         )
         if path:
             self._addr_bar.setText(path)
@@ -227,7 +249,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         if not os.path.isdir(path):
-            QMessageBox.warning(self, "エラー", f"フォルダが見つかりません:\n{path}")
+            QMessageBox.warning(self, tr("err_title"), tr("err_folder_not_found", path=path))
             return
 
         if self._worker and self._worker.isRunning():
@@ -236,7 +258,7 @@ class MainWindow(QMainWindow):
 
         self._act_report.setEnabled(False)
         self._update_drive_label(path)
-        self._lbl_scan_time.setText("計測中...")
+        self._set_scan_time("measuring")
         self._source_model.update_root(self._make_placeholder(path))
         self._configure_columns()
         self._set_scanning(True, path)
@@ -253,9 +275,7 @@ class MainWindow(QMainWindow):
             path = self._worker.current_path
             if path:
                 short = path if len(path) <= 60 else "…" + path[-57:]
-                self._lbl_status.setText(
-                    f"{self._spinner_chars[self._spinner_idx]}  スキャン中: {short}"
-                )
+                self._set_status("scanning", path=short)
 
     def _on_scan_progress(self, child: FolderEntry) -> None:
         """Called as each top-level directory finishes — updates tree incrementally."""
@@ -274,30 +294,30 @@ class MainWindow(QMainWindow):
         self._configure_columns()
         self._proxy.sort(COL_SIZE, Qt.SortOrder.DescendingOrder)
         self._act_report.setEnabled(True)
-        self._lbl_scan_time.setText(f"{elapsed:.2f}s")
+        self._set_scan_time("done", elapsed)
 
         dir_count  = sum(1 for c in root.children if c.is_dir)
         file_count = sum(1 for c in root.children if not c.is_dir)
-        self._lbl_status.setText(
-            f"合計: {format_size(root.size)}"
-            f"  |  フォルダ: {dir_count:,}"
-            f"  |  ファイル: {root.file_count:,}"
-            f"  |  直下ファイル: {file_count:,}"
+        self._set_status(
+            "result",
+            size=format_size(root.size),
+            dirs=dir_count,
+            files=root.file_count,
+            topfiles=file_count,
         )
 
     def _on_scan_error(self, msg: str):
         self._set_scanning(False)
-        self._lbl_status.setText(f"エラー: {msg}")
+        self._set_status("error", msg=msg)
 
     def _on_export_report(self):
         if not self._current_root:
-            QMessageBox.information(self, "レポート作成", "先にスキャンを実行してください。")
+            QMessageBox.information(self, tr("report_title"), tr("report_need_scan"))
             return
 
         default_name = f"report_{datetime.now():%Y%m%d_%H%M%S}.md"
         save_path, _ = QFileDialog.getSaveFileName(
-            self, "レポートを保存", default_name,
-            "Markdown ファイル (*.md);;すべてのファイル (*)"
+            self, tr("report_save_title"), default_name, tr("report_filter")
         )
         if not save_path:
             return
@@ -307,11 +327,10 @@ class MainWindow(QMainWindow):
             with open(save_path, "w", encoding="utf-8") as f:
                 f.write(content)
             QMessageBox.information(
-                self, "レポート作成完了",
-                f"レポートを保存しました:\n{save_path}"
+                self, tr("report_done_title"), tr("report_done_text", path=save_path)
             )
         except OSError as e:
-            QMessageBox.critical(self, "保存エラー", f"保存に失敗しました:\n{e}")
+            QMessageBox.critical(self, tr("report_save_err_title"), tr("report_save_err_text", err=e))
 
     def _tick_spinner(self):
         self._spinner_idx = (self._spinner_idx + 1) % len(self._spinner_chars)
@@ -324,10 +343,42 @@ class MainWindow(QMainWindow):
         if scanning:
             self._spinner_timer.start(100)
             self._poll_timer.start()
-            self._lbl_status.setText(f"スキャン開始: {path}")
+            self._set_status("start", path=path)
         else:
             self._spinner_timer.stop()
             self._poll_timer.stop()
+
+    def _set_status(self, kind: str, **data) -> None:
+        """Stores the status kind/params and renders it, so a language toggle can re-render it."""
+        self._status_kind = kind
+        self._status_data = data
+        self._render_status()
+
+    def _render_status(self) -> None:
+        if self._status_kind == "scanning":
+            spinner = self._spinner_chars[self._spinner_idx]
+            self._lbl_status.setText(f"{spinner}  {tr('status_scanning', **self._status_data)}")
+            return
+        key = {
+            "idle":   "status_idle",
+            "start":  "status_scan_start",
+            "result": "status_result",
+            "error":  "status_error",
+        }[self._status_kind]
+        self._lbl_status.setText(tr(key, **self._status_data))
+
+    def _set_scan_time(self, kind: str, elapsed: float = 0.0) -> None:
+        self._scan_time_kind = kind
+        self._scan_time_elapsed = elapsed
+        self._render_scan_time()
+
+    def _render_scan_time(self) -> None:
+        if self._scan_time_kind == "measuring":
+            self._lbl_scan_time.setText(tr("scan_time_measuring"))
+        elif self._scan_time_kind == "done":
+            self._lbl_scan_time.setText(f"{self._scan_time_elapsed:.2f}s")
+        else:
+            self._lbl_scan_time.setText("—")
 
     def _update_drive_label(self, path: str) -> None:
         try:

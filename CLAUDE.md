@@ -10,6 +10,7 @@
 - **ドライブ容量表示**: アドレスバー左端に `C:\ 150.3 GB / 512.0 GB` と表示
 - **Markdown レポート**: `ファイル > レポート作成` で階層フォルダ容量を出力
 - **左ナビペイン**: ドライブ一覧とフォルダツリー（遅延展開）
+- **表示言語切替**: アドレスバー右端のトグルボタンで 日本語 ⇔ English（`python/i18n.py`、UI全文言・レポート出力に反映）
 
 ### パフォーマンス（C:\、参考値）
 - **初回スキャン**: 50〜150s（OSディスクキャッシュ状態に依存）
@@ -27,8 +28,11 @@ build.bat
 ```
 
 ### 成果物
-- `dist\folder_viewer.exe` — メイン実行ファイル
-- `dist\_internal\` — PyQt6 DLL 群
+- `dist\assets\folder_viewer.exe` — メイン実行ファイル
+- `dist\assets\_internal\` — PyQt6 DLL 群
+- `dist\documents\readme.txt` / `history.txt` — 配布用ドキュメント（Git 管理）
+
+バージョン: v1.0.0
 
 ---
 
@@ -49,11 +53,15 @@ folder_viewer/
 │   ├── delegate.py
 │   ├── navmodel.py
 │   ├── mainwindow.py
-│   └── utils.py
+│   ├── utils.py
+│   └── i18n.py          表示言語切替（日本語 ⇔ English）
 ├── document/
 │   ├── spec.md          仕様書
-│   └── environment.md   開発環境・ビルド手順
-├── dist/                EXE デプロイ先
+│   ├── environment.md   開発環境・ビルド手順
+│   └── about.md         バージョン情報
+├── dist/
+│   ├── assets/           EXE・DLL（build.bat が生成、Git 管理外）
+│   └── documents/        配布用 readme.txt / history.txt（Git 管理）
 ├── build/               PyInstaller 中間ファイル（Git 管理外）
 ├── requirements.txt
 ├── build.bat

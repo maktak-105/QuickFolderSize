@@ -27,18 +27,23 @@ python main.py
 ```powershell
 cd folder_viewer
 build.bat
-# → dist\folder_viewer.exe（dist\ 直下に DLL と共に展開）
+# → dist\assets\folder_viewer.exe（dist\assets\ 直下に DLL と共に展開）
 ```
 
 ### ビルド成果物
 
 ```
 dist/
-├── folder_viewer.exe   # メイン実行ファイル
-└── _internal/          # PyQt6 DLL 群（EXE と同じフォルダに置く）
+├── assets/              # build.bat が生成（Git管理外、フォルダ構造のみ管理）
+│   ├── folder_viewer.exe   # メイン実行ファイル
+│   └── _internal/          # PyQt6 DLL 群（EXE と同じフォルダに置く）
+└── documents/           # 配布用ドキュメント（Git管理）
+    ├── readme.txt
+    └── history.txt
 ```
 
 > `_internal/` は `folder_viewer.exe` と常に同じディレクトリに置く必要がある。
+> 配布時は `dist\assets\` と `dist\documents\` をまとめて渡す。
 
 ## 依存パッケージ
 
@@ -60,11 +65,15 @@ folder_viewer/
 │   ├── delegate.py    SizeBarDelegate — COL_BAR 列にプログレスバー描画
 │   ├── navmodel.py    NavModel (QAbstractItemModel) — 左ナビペイン用ドライブ・フォルダツリー
 │   ├── mainwindow.py  MainWindow (QMainWindow) — UI 全体の組み立て
-│   └── utils.py       format_size() / generate_md_report()
+│   ├── utils.py       format_size() / generate_md_report()
+│   └── i18n.py        tr() / 言語切替（日本語 ⇔ English）
 ├── document/
 │   ├── spec.md        仕様書
-│   └── environment.md 本ファイル（開発環境）
-├── dist/              EXE デプロイ先（build.bat が生成）
+│   ├── environment.md 本ファイル（開発環境）
+│   └── about.md        バージョン情報
+├── dist/
+│   ├── assets/        EXE・DLL（build.bat が生成、Git 管理外）
+│   └── documents/     配布用ドキュメント（readme.txt / history.txt、Git 管理）
 ├── build/             PyInstaller 中間ファイル（Git 管理外）
 ├── requirements.txt   Python 依存パッケージ
 ├── build.bat          EXE ビルドスクリプト
