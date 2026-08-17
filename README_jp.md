@@ -2,6 +2,10 @@
 
 [English README.md](README.md)
 
+<p align="center">
+  <img src="assets/quickfoldersize-gui-ja.png" alt="QuickFolderSize 日本語 GUI" width="720">
+</p>
+
 ローカルドライブ・フォルダの使用容量を視覚的に把握するための Windows デスクトップアプリです。パスをスキャンし、割合バー付きのソート可能なツリーで結果を表示し、Markdown レポートを出力できます。
 
 バージョン: **v1.0.0**

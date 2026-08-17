@@ -258,6 +258,14 @@ body {
   white-space: nowrap;
 }
 
+.time-status {
+  color: var(--accent-cyan);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.time-status:empty { display: none; }
+
 .time-val {
   color: var(--accent-cyan);
   font-family: var(--font-mono);

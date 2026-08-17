@@ -74,7 +74,10 @@ def build():
     out_dll = os.path.join(native_dir, "engine_x64.dll")
     out_gui_exe = os.path.join(binary_dir, "QuickFolderSize.exe")
 
-    windres = os.path.join(os.path.dirname(compiler), "llvm-windres.exe")
+    compiler_dir = os.path.dirname(compiler)
+    windres = os.path.join(compiler_dir, "llvm-windres.exe")
+    if not os.path.exists(windres):
+        windres = os.path.join(compiler_dir, "windres.exe")
     if not os.path.exists(windres):
         windres = shutil.which("windres") or shutil.which("llvm-windres")
     if not windres:

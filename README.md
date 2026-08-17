@@ -2,6 +2,10 @@
 
 [日本語版 README_jp.md](README_jp.md)
 
+<p align="center">
+  <img src="assets/quickfoldersize-gui-en.png" alt="QuickFolderSize English GUI" width="720">
+</p>
+
 Windows desktop app that shows how much space folders and files use on local drives. Scan a path, browse the result as a sortable tree with ratio bars, and export a Markdown report.
 
 Version: **v1.0.0**

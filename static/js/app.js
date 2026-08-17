@@ -9,6 +9,7 @@ const I18N = {
   addr_placeholder: { ja: 'スキャンするフォルダのパスを入力...', en: 'Enter the folder path to scan...' },
   btn_scan: { ja: 'スキャン', en: 'Scan' },
   lbl_elapsed: { ja: 'スキャン時間', en: 'Scan Time' },
+  lbl_scan_done: { ja: '完了', en: 'Done' },
 
   menu_file: { ja: 'ファイル', en: 'File' },
   act_open: { ja: 'フォルダを開く...', en: 'Open Folder...' },
@@ -491,9 +492,15 @@ function setScanTime(kind, elapsed) {
 
 function renderScanTime() {
   const el = document.getElementById('time-val');
-  if (scanTimeKind === 'measuring' || scanTimeKind === 'done') {
+  const status = document.getElementById('time-status');
+  if (scanTimeKind === 'measuring') {
+    status.textContent = '';
+    el.textContent = scanTimeElapsed.toFixed(2) + 's';
+  } else if (scanTimeKind === 'done') {
+    status.textContent = tr('lbl_scan_done');
     el.textContent = scanTimeElapsed.toFixed(2) + 's';
   } else {
+    status.textContent = '';
     el.textContent = '—';
   }
 }
