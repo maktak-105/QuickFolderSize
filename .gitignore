@@ -1,11 +1,20 @@
-# PyInstaller
+# Phase 1 (Python) PyInstaller
 build/
 dist_tmp/
 __pycache__/
 *.pyc
 
-# dist/assets: ビルド成果物（EXE・DLL）はGit管理外、フォルダ構造だけ管理
+# dist/assets: 旧Python版ビルド成果物（EXE・DLL）はGit管理外、フォルダ構造だけ管理
 dist/assets/*
 !dist/assets/.gitkeep
 
+# dist/binary: C++/WebView2版ビルド成果物はGit管理外、フォルダ構造だけ管理
+dist/binary/*
+!dist/binary/.gitkeep
+
 # dist/documents: 配布用ドキュメント（readme.txt / history.txt）はGit管理する
+
+# core/native: build_native.py が生成する中間ファイル
+core/native/*.dll
+core/native/*.o
+core/native/*_debug.log

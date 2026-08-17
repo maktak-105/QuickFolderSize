@@ -1,4 +1,4 @@
-# フォルダ使用容量ビューワー バージョン情報
+# QuickFolderSize バージョン情報
 
 ## バージョン
 Ver. v1.0.0
@@ -7,19 +7,14 @@ Ver. v1.0.0
 画面右上のボタンで 日本語 ⇔ English を切り替え可能（メニュー・ステータス・レポート出力すべてに反映）
 
 ## 開発環境
-- Python 3.13.12
-- PyQt6 >= 6.4.0 (GUIフレームワーク)
-- PyInstaller >= 6.0.0 (EXEパッケージング)
-- Pillow >= 10.0.0 (画像変換ライブラリ)
+- C++17（MinGW-w64 / g++、WinLibs MCF UCRT）
+- WebView2（Microsoft Edge WebView2 Runtime）
+- Win32 API（FindFirstFileW/FindNextFileW, IFileDialog, DwmSetWindowAttribute 等）
 
-### 使用している標準ライブラリ（stdlib）
-- os
-- shutil
-- concurrent.futures
-- ctypes
-- string
-- dataclasses
-- datetime
+サードパーティのC++ライブラリ依存なし。フロントエンド(HTML/CSS/JS)もフレームワーク非依存。
+
+## 旧実装(参照用)
+Phase 1のPythonプロトタイプ(PyQt6ベース)は `python/` に残っている。
 
 ## 制作者
-0120025-Z100
+GitHub: maktak-105

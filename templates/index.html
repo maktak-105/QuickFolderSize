@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickFolderSize</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+  <div id="menubar">
+    <div class="menu-item">
+      <span data-i18n="menu_file"></span>
+      <div class="menu-dropdown">
+        <div class="menu-action" data-action="open"><span data-i18n="act_open"></span><span class="menu-shortcut">Ctrl+O</span></div>
+        <div class="menu-action" data-action="rescan"><span data-i18n="act_rescan"></span><span class="menu-shortcut">F5</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-action disabled" id="act-report" data-action="report"><span data-i18n="act_report"></span><span class="menu-shortcut">Ctrl+Shift+S</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-action" data-action="quit"><span data-i18n="act_quit"></span><span class="menu-shortcut">Ctrl+Q</span></div>
+      </div>
+    </div>
+    <div class="menu-item">
+      <span data-i18n="menu_help"></span>
+      <div class="menu-dropdown">
+        <div class="menu-action" data-action="about"><span data-i18n="act_about"></span></div>
+      </div>
+    </div>
+    <button id="btn-lang" class="btn-action" title="Toggle Language / 言語切替">
+      <span id="lang-text">🌐 English</span>
+    </button>
+  </div>
+
+  <div id="addressbar">
+    <div id="drive-label">—</div>
+    <input type="text" id="addr-input" data-i18n-placeholder="addr_placeholder">
+    <button id="btn-scan" data-i18n="btn_scan"></button>
+  </div>
+
+  <div id="main">
+    <div id="nav-col">
+      <div id="nav-pane">
+        <ul id="nav-tree"></ul>
+      </div>
+      <div id="time-box">
+        <div class="time-row">
+          <span class="time-label" data-i18n="lbl_elapsed"></span>
+          <span class="time-val" id="time-val">—</span>
+        </div>
+      </div>
+    </div>
+    <div id="splitter"></div>
+    <div id="tree-pane">
+      <table id="tree-table">
+        <thead>
+          <tr>
+            <th data-col="name" data-i18n="col_name"></th>
+            <th data-col="size" data-i18n="col_size"></th>
+            <th data-col="bar" data-i18n="col_ratio"></th>
+            <th data-col="files" data-i18n="col_files"></th>
+            <th data-col="mtime" data-i18n="col_mtime"></th>
+          </tr>
+        </thead>
+        <tbody id="tree-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="about-overlay" class="overlay hidden">
+    <div class="about-dialog">
+      <div id="about-content"></div>
+      <button id="about-close">OK</button>
+    </div>
+  </div>
+
+  <script src="../static/js/app.js"></script>
+</body>
+</html>

@@ -1,26 +1,12 @@
 @echo off
-echo === Phase 2: PyInstaller Build ===
+echo === QuickFolderSize Native Build ===
 
-echo [1/3] Installing dependencies...
-pip install -r requirements.txt
+python build_native.py
 if errorlevel 1 (
-    echo ERROR: pip install failed
+    echo ERROR: build_native.py failed
     exit /b 1
 )
-
-echo [2/3] Building EXE...
-if exist build rmdir /s /q build
-pyinstaller folder_viewer.spec --distpath dist_tmp --workpath build --noconfirm
-if errorlevel 1 (
-    echo ERROR: PyInstaller build failed
-    exit /b 1
-)
-
-echo [3/3] Moving output to dist\assets\...
-if not exist dist\assets mkdir dist\assets
-xcopy /s /y /q dist_tmp\folder_viewer\* dist\assets\
-rmdir /s /q dist_tmp
 
 echo.
 echo === Build complete ===
-echo Output: dist\assets\folder_viewer.exe
+echo Output: dist\binary\QuickFolderSize.exe
