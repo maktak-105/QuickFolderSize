@@ -1,22 +1,25 @@
-フォルダ使用容量ビューワー - 更新履歴
+QuickFolderSize - Change log
 
 v1.0.0 (2026-08-17)
-- 正式バージョン番号 v1.0.0 として初回リリース
-- 表示言語を 日本語 ⇔ English に切り替えるトグルボタンを追加
-- 配布物を assets（EXE・DLL）と documents（readme / history）に分離
+- Native C++17 + WebView2 release (MinGW-w64 / g++)
+- Dark glassmorphism UI (HTML/CSS/vanilla JS)
+- Parallel full-depth scan, mtime cache, junction skip
+- Japanese / English language toggle
+- Scan Time card shows live elapsed seconds (updates every 0.2 s)
+- Distribution docs: readme.txt (English), readme-jp.txt (Japanese), history.txt / history_jp.txt
 
---- それ以前の開発履歴 ---
+--- earlier development (Python / PyQt6 prototype) ---
 
 2026-07-15
-- ヘルプメニューにバージョン情報ダイアログを追加
+- About dialog in the Help menu
 
 2026-07-10
-- スキャンの並列化を全階層対応に変更（階層が深くても並列度が落ちない設計に変更）
-- NTFS ジャンクション／マウントポイント対策、メモリ使用量を改善
+- Parallel scan across all depths
+- NTFS junction / mount-point handling, lower memory use
 
 2026-06-02
-- PyInstaller による EXE パッケージングに対応
-- 並列スキャンの強化、UI 改善
+- PyInstaller EXE packaging (legacy Python build)
+- Stronger parallel scan and UI updates
 
 2026-05-29
-- 初版リリース: フォルダスキャン・ツリー表示・Markdown レポート出力機能を実装
+- First prototype: folder scan, tree view, Markdown report

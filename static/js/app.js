@@ -452,18 +452,44 @@ function setupSortHeaders() {
 
 let scanTimeKind = 'idle';
 let scanTimeElapsed = 0;
+let scanTimeTimer = null;
+
+function startScanTimeTicker() {
+  stopScanTimeTicker();
+  const tick = () => {
+    if (scanTimeKind !== 'measuring' || !scanStartTime) return;
+    scanTimeElapsed = (Date.now() - scanStartTime.getTime()) / 1000;
+    renderScanTime();
+  };
+  tick();
+  scanTimeTimer = setInterval(tick, 200);
+}
+
+function stopScanTimeTicker() {
+  if (scanTimeTimer !== null) {
+    clearInterval(scanTimeTimer);
+    scanTimeTimer = null;
+  }
+}
 
 function setScanTime(kind, elapsed) {
   scanTimeKind = kind;
+  if (kind === 'measuring') {
+    startScanTimeTicker();
+    return;
+  }
+  stopScanTimeTicker();
   scanTimeElapsed = elapsed || 0;
   renderScanTime();
 }
 
 function renderScanTime() {
   const el = document.getElementById('time-val');
-  if (scanTimeKind === 'measuring') el.textContent = tr('scan_time_measuring');
-  else if (scanTimeKind === 'done') el.textContent = scanTimeElapsed.toFixed(2) + 's';
-  else el.textContent = '—';
+  if (scanTimeKind === 'measuring' || scanTimeKind === 'done') {
+    el.textContent = scanTimeElapsed.toFixed(2) + 's';
+  } else {
+    el.textContent = '—';
+  }
 }
 
 // ===== レポート出力 =====

@@ -438,6 +438,14 @@ tr:hover .row-twisty { color: var(--accent-cyan); }
 }
 .about-dialog b { color: var(--accent-cyan); }
 .about-dialog hr { border: none; border-top: 1px solid var(--border-color); margin: 10px 0; }
+.about-dialog .about-author {
+  display: block;
+  width: 160px;
+  height: auto;
+  margin: 16px auto 0;
+  border-radius: 50%;
+  background: #fff;
+}
 .about-dialog #about-close {
   margin-top: 12px;
   padding: 6px 22px;

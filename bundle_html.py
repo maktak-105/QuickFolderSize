@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 
 
 def bundle(output_dir=None):
@@ -33,6 +34,24 @@ def bundle(output_dir=None):
     body_end = html.find("</body>")
     body_content = html[body_start:body_end]
     body_content = re.sub(r'<script.*?</script>', '', body_content, flags=re.DOTALL)
+
+    # NavigateToString は相対パスの画像も解決できないので data URI に埋め込む
+    def _inline_img(match):
+        prefix, src, suffix = match.group(1), match.group(2), match.group(3)
+        if src.startswith("data:") or src.startswith("http://") or src.startswith("https://"):
+            return match.group(0)
+        img_path = os.path.normpath(os.path.join(os.path.dirname(tmpl_path), src))
+        if not os.path.isfile(img_path):
+            print(f"[WARN] image not found for inline: {img_path}")
+            return match.group(0)
+        ext = os.path.splitext(img_path)[1].lower()
+        mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}.get(ext, "application/octet-stream")
+        with open(img_path, "rb") as imgf:
+            b64 = base64.b64encode(imgf.read()).decode("ascii")
+        return f'{prefix}data:{mime};base64,{b64}{suffix}'
+
+    body_content = re.sub(r'(<img\b[^>]*\bsrc=")([^"]+)(")', _inline_img, body_content)
 
     bundled += body_content
     bundled += f"""

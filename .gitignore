@@ -12,7 +12,7 @@ dist/assets/*
 dist/binary/*
 !dist/binary/.gitkeep
 
-# dist/documents: 配布用ドキュメント（readme.txt / history.txt）はGit管理する
+# dist/documents: 配布用ドキュメント（readme / history / LICENSE）はGit管理する
 
 # core/native: build_native.py が生成する中間ファイル
 core/native/*.dll

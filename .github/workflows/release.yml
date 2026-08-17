@@ -1,0 +1,82 @@
+name: Build and upload distribution asset
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to update, for example v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MinGW and Python
+        shell: pwsh
+        run: choco install mingw python --yes --no-progress
+
+      - name: Install WebView2 SDK headers
+        shell: pwsh
+        run: |
+          $sdk = Join-Path $env:RUNNER_TEMP 'webview2-sdk.zip'
+          $dir = Join-Path $env:RUNNER_TEMP 'webview2-sdk'
+          Invoke-WebRequest 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2' -OutFile $sdk
+          Expand-Archive -LiteralPath $sdk -DestinationPath $dir -Force
+          "WEBVIEW2_INCLUDE=$dir\build\native\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build native application
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING = 'utf-8'
+          python build_native.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+
+      - name: Package distribution files
+        shell: pwsh
+        run: |
+          $files = @(
+            'dist/binary/QuickFolderSize.exe',
+            'dist/binary/engine_x64.dll',
+            'dist/binary/WebView2Loader.dll',
+            'dist/binary/index.html',
+            'dist/documents/readme.txt',
+            'dist/documents/readme-jp.txt',
+            'dist/documents/history.txt',
+            'dist/documents/history_jp.txt',
+            'dist/documents/LICENSE.txt',
+            'dist/documents/LICENSE_jp.txt'
+          )
+          foreach ($file in $files) {
+            if (!(Test-Path -LiteralPath $file)) { throw "Missing distribution file: $file" }
+          }
+          $staging = Join-Path $env:RUNNER_TEMP 'QuickFolderSize-package'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          foreach ($file in $files) {
+            Copy-Item -LiteralPath $file -Destination $staging -Force
+          }
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'QuickFolderSize-binary.zip') -Force
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          files: QuickFolderSize-binary.zip
+          overwrite_files: true
+          generate_release_notes: true
+          body: |
+            QuickFolderSize ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+            Download `QuickFolderSize-binary.zip`, extract every file into the same folder, and run `QuickFolderSize.exe`.
+
+            Keep `QuickFolderSize.exe`, `WebView2Loader.dll`, and `index.html` together.
+            Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server PCs, install Microsoft Edge WebView2 Runtime (Evergreen).
