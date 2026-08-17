@@ -30,6 +30,26 @@ build.bat
 # → dist\assets\folder_viewer.exe（dist\assets\ 直下に DLL と共に展開）
 ```
 
+`build.bat` は `folder_viewer.spec` を直接ビルドする（`pyinstaller folder_viewer.spec`）。
+以前は CLI 引数から毎回 spec を自動生成していたが、spec 側でサイズ最適化（後述）を
+行うようにしたため、spec がビルド設定の単一の情報源になっている。
+
+### サイズ最適化（`folder_viewer.spec`）
+
+未使用の PyQt6 機能を除外し、配布サイズを約88MB→約58MBまで削減している。
+
+- `Analysis(excludes=...)` で未使用サブモジュール（`QtNetwork` / `QtPdf` / `QtQml` /
+  `QtMultimedia` など）の Python バインディングを除外
+- `Analysis()` 実行後に `a.binaries` / `a.datas` をフィルタし、モジュール除外だけでは
+  落ちない実体 DLL・データも削除:
+  - `opengl32sw.dll`（未使用の Mesa ソフトウェア OpenGL レンダラ、約20MB）
+  - `Qt6Network.dll` / `Qt6Pdf.dll`（QtNetwork/QtPdf の実体 DLL）
+  - `Qt6/plugins/styles/`（`app.setStyle("Fusion")` は組み込みスタイルでプラグイン不要）
+  - `Qt6/translations/`（`QTranslator` 未使用、独自 `i18n.py` で対応済み）
+
+新しい Qt 機能を使う場合は `folder_viewer.spec` の `_UNUSED_PYQT6_MODULES` /
+`_DROP_BINARY_BASENAMES` / `_DROP_PATH_MARKERS` を見直すこと。
+
 ### ビルド成果物
 
 ```
@@ -76,8 +96,8 @@ folder_viewer/
 │   └── documents/     配布用ドキュメント（readme.txt / history.txt、Git 管理）
 ├── build/             PyInstaller 中間ファイル（Git 管理外）
 ├── requirements.txt   Python 依存パッケージ
-├── build.bat          EXE ビルドスクリプト
-├── folder_viewer.spec PyInstaller spec（build.bat 実行時に自動更新）
+├── build.bat          EXE ビルドスクリプト（folder_viewer.spec を直接ビルド）
+├── folder_viewer.spec PyInstaller spec（サイズ最適化の除外設定を含む、手動管理）
 ├── .gitignore
 └── CLAUDE.md          実装計画・Claude 向け指示
 ```

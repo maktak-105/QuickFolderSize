@@ -9,7 +9,8 @@ if errorlevel 1 (
 )
 
 echo [2/3] Building EXE...
-pyinstaller --onedir --windowed --name folder_viewer --icon=python/resources/icon.ico --add-data "python/resources;resources" --distpath dist_tmp --workpath build --noconfirm python/main.py
+if exist build rmdir /s /q build
+pyinstaller folder_viewer.spec --distpath dist_tmp --workpath build --noconfirm
 if errorlevel 1 (
     echo ERROR: PyInstaller build failed
     exit /b 1

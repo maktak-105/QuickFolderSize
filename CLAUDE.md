@@ -24,12 +24,15 @@
 ```powershell
 cd folder_viewer
 build.bat
-# → dist\folder_viewer.exe（dist\ 直下に DLL と共に展開）
+# → dist\assets\folder_viewer.exe（dist\assets\ 直下に DLL と共に展開）
 ```
+
+`build.bat` は `folder_viewer.spec` を直接ビルドする。CLI引数での毎回自動生成はやめた
+（spec側でサイズ最適化の除外設定を管理するため。詳細は `document/environment.md`）。
 
 ### 成果物
 - `dist\assets\folder_viewer.exe` — メイン実行ファイル
-- `dist\assets\_internal\` — PyQt6 DLL 群
+- `dist\assets\_internal\` — PyQt6 DLL 群（未使用機能除外済み、約58MB。従来約88MB）
 - `dist\documents\readme.txt` / `history.txt` — 配布用ドキュメント（Git 管理）
 
 バージョン: v1.0.0
