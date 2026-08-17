@@ -11,6 +11,7 @@ dist/assets/*
 # dist/binary: C++/WebView2版ビルド成果物はGit管理外、フォルダ構造だけ管理
 dist/binary/*
 !dist/binary/.gitkeep
+dist/*.zip
 
 # dist/documents: 配布用ドキュメント（readme / history / LICENSE）はGit管理する
 

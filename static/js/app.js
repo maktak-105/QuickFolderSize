@@ -301,11 +301,17 @@ function onScanProgress(msg) {
 }
 
 function onScanFinished(msg) {
+  // 表示は JS 側の経過時間で統一する。
+  // native の elapsed_seconds は scan_directory 本体だけなので、JSON 化・
+  // WebView2 転送の分だけ短く、完了時に 20s → 10s のように巻き戻って見えていた。
+  const elapsed = scanStartTime
+    ? (Date.now() - scanStartTime.getTime()) / 1000
+    : (msg.elapsed_seconds || 0);
+  setScanTime('done', elapsed);
   scanTree = msg.data;
   pathIndex = new Map();
   indexTree(scanTree);
   setDisplayNode(scanTree, msg.root, true);
-  setScanTime('done', msg.elapsed_seconds);
   setReportEnabled(true);
 }
 
