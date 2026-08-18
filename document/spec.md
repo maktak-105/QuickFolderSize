@@ -79,6 +79,8 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 | フォルダスキャン | 指定パス以下を再帰スキャン、フォルダ・ファイルを集計 |
 | バックグラウンドスキャン | ワーカースレッド + `scan_directory()` でUIスレッドをブロックしない |
 | 全深度並列スキャン | 固定サイズのスレッドプール(32 workers)を全ディレクトリで共有。非ブロッキングfan-outで完了通知するため、深さに関わらず並列度が落ちない |
+| NTFS MFT高速経路 | `C:\` などのNTFSボリューム直下を`\\.\X:`からMFTを読み、FILEレコードの親参照でツリーを復元。ディレクトリ巡回を省略する。EXEは`requireAdministrator`で起動する |
+| スキャン方式フォールバック | MFTを開けない場合、非NTFS、個別フォルダ、ネットワークパスは従来の`FindFirstFileW`/`FindNextFileW`方式へ自動フォールバック |
 | ジャンクション対策 | `FILE_ATTRIBUTE_REPARSE_POINT` を検出して再帰から除外(ファイル・ディレクトリ双方) |
 | インクリメンタルUI更新 | ルート直下のディレクトリが完了するたびに `scan_progress` メッセージでツリーを順次更新 |
 | mtime 差分キャッシュ | 前回スキャン結果のツリーをネイティブ側で保持。再スキャン時は各ディレクトリのFILETIMEを比較し、変化のないディレクトリは列挙をスキップしてキャッシュから再利用(ファイルは無条件再利用、サブディレクトリは個別に再検証) |
@@ -122,7 +124,7 @@ JS→native は `window.chrome.webview.postMessage({cmd: ..., ...})`、native→
 | `browse_result` | 選択されたフォルダパス(キャンセル時は空文字) |
 | `scan_placeholder` | スキャン開始直後の直下1レベル一覧 + 対象ドライブの容量情報 |
 | `scan_progress` | ルート直下の子フォルダが1つ完了するたびに、その子の完全な部分木(入れ子JSON) |
-| `scan_finished` | スキャン完了時のルート全体(入れ子JSON) + `elapsed_seconds`（エンジン本体の秒数。UIの表示時間には使わない） |
+| `scan_finished` | スキャン完了時のルート全体(入れ子JSON) + `elapsed_seconds` + `scan_method`（`mft` または `win32`。エンジン本体の秒数はUIの表示時間には使わない） |
 | `scan_error` | 指定パスが存在しない/フォルダでない場合のエラー通知 |
 | `nav_children` | `nav_expand` の応答(直下フォルダ一覧) |
 | `export_result` | レポート保存の成否とパス |
@@ -151,8 +153,9 @@ JS→native は `window.chrome.webview.postMessage({cmd: ..., ...})`、native→
   └─ ワーカースレッド起動
        │
        └─ scan_directory(path, 前回ルート, ...) [engine.cpp]
-            │
-            ├─ ルート直下は常に FindFirstFileW/FindNextFileW で再列挙
+            ├─ NTFSボリューム直下 + 管理者権限 → MFT高速経路（完了時に一括通知）
+            └─ その他 / MFT読取失敗 → Win32列挙経路
+                 ├─ ルート直下は常に FindFirstFileW/FindNextFileW で再列挙
             │    サブディレクトリごとに ScanNode() をスレッドプールへ投入(非ブロッキング)
             │
             └─ 各ディレクトリタスク ScanNode()
@@ -171,6 +174,8 @@ JS→native は `window.chrome.webview.postMessage({cmd: ..., ...})`、native→
   ├─ ネイティブ側: 直前のキャッシュ木を解放し、今回のツリーを次回用に保持
   └─ JS側: ボタン押下からの経過秒を完了表示として固定し、受信ツリーを pathIndex に登録、テーブル再描画
 ```
+
+MFT高速経路はNTFSのFILEレコードを直接読むため、EXE起動時にUAC確認を表示して管理者権限を取得する。MFT経路では巨大な部分木の進捗JSONを送らず、完了結果を一度だけ送信する。MFTのJSONではノードごとの絶対パスを省略し、JS側で親パスから復元する。
 
 キャンセルされたスキャン(別フォルダへの切替等)は、Python版と同様に結果を破棄しキャッシュを更新しない。
 

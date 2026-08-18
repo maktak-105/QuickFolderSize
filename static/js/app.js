@@ -307,13 +307,58 @@ function onScanFinished(msg) {
   // WebView2 転送の分だけ短く、完了時に 20s → 10s のように巻き戻って見えていた。
   const elapsed = scanStartTime
     ? (Date.now() - scanStartTime.getTime()) / 1000
-    : (msg.elapsed_seconds || 0);
+  : (msg.elapsed_seconds || 0);
   setScanTime('done', elapsed);
-  scanTree = msg.data;
-  pathIndex = new Map();
-  indexTree(scanTree);
+  if (msg.flat_records) {
+    const inflated = inflateFlatRecords(msg.flat_records, msg.root);
+    scanTree = inflated.root;
+    pathIndex = inflated.index;
+  } else {
+    scanTree = msg.data;
+    if (msg.compact_paths) hydrateTreePaths(scanTree, msg.root);
+    pathIndex = new Map();
+    indexTree(scanTree);
+  }
   setDisplayNode(scanTree, msg.root, true);
   setReportEnabled(true);
+}
+
+// MFT scans use compact parent-id records instead of repeating JSON keys,
+// children arrays, and absolute paths for every node. Records are parent-first,
+// so paths and the path index can be built in one pass while inflating them.
+function inflateFlatRecords(records, rootPath) {
+  const nodes = new Array(records.length);
+  const index = new Map();
+  let root = null;
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    const parentId = r[0];
+    const parent = parentId >= 0 ? nodes[parentId] : null;
+    const path = parent
+      ? (parent.path.endsWith('\\') ? parent.path + r[1] : parent.path + '\\' + r[1])
+      : rootPath;
+    const node = {
+      name: r[1], path, size: r[2], file_count: r[3], mtime_ms: r[4],
+      is_accessible: true, is_dir: r[5] === 1, children: [],
+    };
+    nodes[i] = node;
+    index.set(normPath(path), node);
+    if (parent) parent.children.push(node); else root = node;
+  }
+  return { root, index };
+}
+
+// MFT scans omit repeated absolute paths from the wire JSON. Reconstruct them
+// once after parsing so the rest of the UI can keep its existing path-based API.
+function hydrateTreePaths(node, parentPath) {
+  if (!node) return;
+  if (!node.path) {
+    if (!parentPath) node.path = node.name || '';
+    else if (!node.name) node.path = parentPath;
+    else if (parentPath.endsWith('\\')) node.path = parentPath + node.name;
+    else node.path = parentPath + '\\' + node.name;
+  }
+  for (const child of (node.children || [])) hydrateTreePaths(child, node.path);
 }
 
 function indexTree(node) {

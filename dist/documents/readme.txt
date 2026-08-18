@@ -57,6 +57,8 @@ Features
 - Recursive size totals, file counts, and last-modified times
 - Background scan; the window stays usable
 - Parallel scan of all directory depths (32 workers)
+- NTFS volume-root MFT fast path (the EXE requests administrator rights at startup)
+- Automatic fallback to the regular Windows API scanner for non-NTFS, folder, or network scans
 - Live elapsed time under the left pane, updated every 0.2 seconds
 - Drive used / total capacity on the address bar
 - Left pane: drives and folders (folders load when you expand them)
@@ -66,6 +68,10 @@ Features
 - Faster rescan when folder timestamps have not changed
 - Markdown report (File > Export Report...)
 - Language toggle: Japanese / English (top-right of the menu bar)
+
+NTFS fast path
+--------------
+When scanning a volume root such as C:\, QuickFolderSize reads NTFS MFT records directly and reconstructs the tree without opening every directory. The EXE requests administrator rights at startup, which triggers a UAC confirmation. If the volume is not NTFS, the target is an individual folder or network path, the regular FindFirstFileW / FindNextFileW scanner is used instead.
 
 Keyboard shortcuts
 ------------------

@@ -193,9 +193,10 @@ long long FileTimeInt64ToUnixMillis(long long ft) {
     return (ft - 116444736000000000LL) / 10000LL;
 }
 
-void SerializeEntryJson(const ScanEntryC& node, std::wstringstream& ss) {
-    ss << L"{\"name\":\"" << JsonEscape(node.name) << L"\","
-       << L"\"path\":\"" << JsonEscape(node.path) << L"\","
+void SerializeEntryJson(const ScanEntryC& node, std::wstringstream& ss, bool compact_paths = false) {
+    ss << L"{\"name\":\"" << JsonEscape(node.name) << L"\",";
+    if (!compact_paths) ss << L"\"path\":\"" << JsonEscape(node.path) << L"\",";
+    ss
        << L"\"size\":" << node.size << L","
        << L"\"file_count\":" << node.file_count << L","
        << L"\"mtime_ms\":" << FileTimeInt64ToUnixMillis(node.mtime_raw) << L","
@@ -204,13 +205,79 @@ void SerializeEntryJson(const ScanEntryC& node, std::wstringstream& ss) {
        << L"\"children\":[";
     for (int i = 0; i < node.child_count; ++i) {
         if (i > 0) ss << L",";
-        SerializeEntryJson(node.children[i], ss);
+        SerializeEntryJson(node.children[i], ss, compact_paths);
     }
     ss << L"]}";
 }
 
-void PostJsonToWebView(const std::wstring& json) {
-    std::wstring* pJson = new std::wstring(json);
+void AppendJsonEscaped(const wchar_t* value, std::wstring& out) {
+    out.push_back(L'"');
+    if (value) {
+        for (const wchar_t* p = value; *p; ++p) {
+            switch (*p) {
+                case L'\\': out += L"\\\\"; break;
+                case L'"':  out += L"\\\""; break;
+                case L'\n': out += L"\\n"; break;
+                case L'\r': out += L"\\r"; break;
+                case L'\t': out += L"\\t"; break;
+                default: out.push_back(*p); break;
+            }
+        }
+    }
+    out.push_back(L'"');
+}
+
+void AppendJsonUInt64(unsigned long long value, std::wstring& out) {
+    out += std::to_wstring(value);
+}
+
+void AppendJsonInt64(long long value, std::wstring& out) {
+    out += std::to_wstring(value);
+}
+
+void SerializeEntryJsonFast(const ScanEntryC& node, std::wstring& out) {
+    out += L"{\"name\":";
+    AppendJsonEscaped(node.name, out);
+    out += L",\"size\":";
+    AppendJsonUInt64(node.size, out);
+    out += L",\"file_count\":";
+    AppendJsonUInt64(node.file_count, out);
+    out += L",\"mtime_ms\":";
+    AppendJsonInt64(FileTimeInt64ToUnixMillis(node.mtime_raw), out);
+    out += node.is_accessible ? L",\"is_accessible\":true" : L",\"is_accessible\":false";
+    out += node.is_dir ? L",\"is_dir\":true,\"children\":[" : L",\"is_dir\":false,\"children\":[]";
+    if (node.is_dir) {
+        for (int i = 0; i < node.child_count; ++i) {
+            if (i > 0) out.push_back(L',');
+            SerializeEntryJsonFast(node.children[i], out);
+        }
+        out.push_back(L']');
+    }
+    out.push_back(L'}');
+}
+
+void SerializeEntryFlatFast(const ScanEntryC& node, std::wstring& out,
+                            int parent_id, int& next_id) {
+    int id = next_id++;
+    if (id > 0) out.push_back(L',');
+    out.push_back(L'[');
+    out += std::to_wstring(parent_id);
+    out.push_back(L',');
+    AppendJsonEscaped(node.name, out);
+    out.push_back(L',');
+    AppendJsonUInt64(node.size, out);
+    out.push_back(L',');
+    AppendJsonUInt64(node.file_count, out);
+    out.push_back(L',');
+    AppendJsonInt64(FileTimeInt64ToUnixMillis(node.mtime_raw), out);
+    out += node.is_dir ? L",1]" : L",0]";
+    for (int i = 0; i < node.child_count; ++i)
+        SerializeEntryFlatFast(node.children[i], out, id, next_id);
+}
+
+void PostJsonToWebView(std::wstring json) {
+    // 巨大なMFT JSONをキューへ渡す際、const参照経由の全体コピーを避ける。
+    std::wstring* pJson = new std::wstring(std::move(json));
     PostMessageW(g_hWnd, WM_POST_JSON, 0, (LPARAM)pJson);
 }
 
@@ -300,13 +367,46 @@ void OnFinished(const ScanEntryC* node, void* user_data) {
     } else {
         double elapsed = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - rc->start_time).count();
-        std::wstringstream ss;
-        ss << std::fixed << std::setprecision(3);
-        ss << L"{\"type\":\"scan_finished\",\"root\":\"" << JsonEscape(rc->root_path)
-           << L"\",\"elapsed_seconds\":" << elapsed << L",\"data\":";
-        SerializeEntryJson(*node, ss);
-        ss << L"}";
-        PostJsonToWebView(ss.str());
+        auto json_start = std::chrono::steady_clock::now();
+        size_t json_chars = 0;
+        double json_ms = 0.0;
+        if (node->scan_mode == 1) {
+            std::wstring json;
+            json.reserve(32 * 1024 * 1024);
+            json += L"{\"type\":\"scan_finished\",\"root\":";
+            AppendJsonEscaped(rc->root_path.c_str(), json);
+            json += L",\"elapsed_seconds\":";
+            json += std::to_wstring(elapsed);
+            json += L",\"scan_method\":\"mft\",\"compact_paths\":true";
+            json += L",\"mft_read_ms\":" + std::to_wstring(node->mft_read_ms);
+            json += L",\"mft_tree_ms\":" + std::to_wstring(node->mft_tree_ms);
+            json += L",\"mft_build_ms\":" + std::to_wstring(node->mft_build_ms);
+            json += L",\"flat_records\":[";
+            int next_id = 0;
+            SerializeEntryFlatFast(*node, json, -1, next_id);
+            json.push_back(L']');
+            json.push_back(L'}');
+            json_chars = json.size();
+            json_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - json_start).count();
+            PostJsonToWebView(std::move(json));
+        } else {
+            std::wstringstream ss;
+            ss << std::fixed << std::setprecision(3);
+            ss << L"{\"type\":\"scan_finished\",\"root\":\"" << JsonEscape(rc->root_path)
+               << L"\",\"elapsed_seconds\":" << elapsed
+               << L",\"scan_method\":\"win32\",\"compact_paths\":false,\"data\":";
+            SerializeEntryJson(*node, ss);
+            ss << L"}";
+            std::wstring json = ss.str();
+            json_chars = json.size();
+            json_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - json_start).count();
+            PostJsonToWebView(std::move(json));
+        }
+        LOG("[SCAN] method=%s native=%.3fs mft_read=%.3fms mft_tree=%.3fms mft_build=%.3fms json=%.3fms chars=%zu",
+            node->scan_mode == 1 ? "mft" : "win32", elapsed,
+            node->mft_read_ms, node->mft_tree_ms, node->mft_build_ms, json_ms, json_chars);
 
         std::lock_guard<std::mutex> lock(g_prevRootMtx);
         if (g_prevRoot) free_scan_tree(g_prevRoot);

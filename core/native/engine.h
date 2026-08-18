@@ -16,6 +16,10 @@ typedef struct ScanEntryC {
     long long mtime_raw;             // FILETIME を64bit整数化したもの
     int is_accessible;               // 0/1
     int is_dir;                      // 0/1
+    int scan_mode;                   // rootのみ: 0=Win32列挙, 1=NTFS MFT
+    double mft_read_ms;              // rootのみ: MFT読取・レコード解析
+    double mft_tree_ms;              // rootのみ: 親子リンク・集計
+    double mft_build_ms;             // rootのみ: EntryBuilder構築
     int child_count;
     struct ScanEntryC* children;     // child_count 個の配列。file の場合は NULL
 } ScanEntryC;
