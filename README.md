@@ -8,7 +8,7 @@
 
 Windows desktop app that shows how much space folders and files use on local drives. Scan a path, browse the result as a sortable tree with ratio bars, and export a Markdown report.
 
-Version: **v1.0.0**
+Version: **v2.0.1**
 
 Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanilla JS hosted in a native WebView2 window. There is no Python or Qt runtime in the shipped app.
 
@@ -17,8 +17,8 @@ Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanil
 If you only want to run the app, download the ZIP from GitHub Releases.
 
 - [Latest releases](https://github.com/maktak-105/QuickFolderSize/releases)
-- [v1.0.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v1.0.0)
-- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v1.0.0/QuickFolderSize-binary.zip)
+- [v2.0.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v2.0.1)
+- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v2.0.1/QuickFolderSize-binary.zip)
 
 Extract every file into the same folder and run `QuickFolderSize.exe`.
 

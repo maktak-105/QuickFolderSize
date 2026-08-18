@@ -6,7 +6,7 @@ Unreleased
 - Added automatic Win32 scanner fallback when MFT access is unavailable.
 - Reduced MFT JSON payloads by reconstructing absolute paths in JavaScript.
 
-v1.0.0 (2026-08-17)
+v2.0.1 (2026-08-18)
 - Native C++17 + WebView2 release (MinGW-w64 / g++)
 - Dark glassmorphism UI (HTML/CSS/vanilla JS)
 - Parallel full-depth scan, mtime cache, junction skip
