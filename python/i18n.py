@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-APP_VERSION = "v1.0.0"
+APP_VERSION = "v2.0.1"
 
 _LANGS = ("ja", "en")
 _lang = "ja"

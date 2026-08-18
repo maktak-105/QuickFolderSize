@@ -41,7 +41,7 @@ build.bat
 
 詳細は `document/environment.md` を参照。
 
-バージョン: v1.0.0(据え置き)
+バージョン: v2.0.1
 
 ---
 
