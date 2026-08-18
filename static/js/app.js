@@ -2,7 +2,7 @@
 // python/mainwindow.py + model.py + navmodel.py + delegate.py + utils.py + i18n.py の
 // UIロジックをHTML/CSS/JS + WebView2 JSON WebMessageブリッジへ移植したもの。
 
-const APP_VERSION = 'v1.0.0';
+const APP_VERSION = 'v2.0.1';
 
 const I18N = {
   window_title: { ja: 'QuickFolderSize - フォルダ使用容量ビューワー', en: 'QuickFolderSize - Folder Size Viewer' },
