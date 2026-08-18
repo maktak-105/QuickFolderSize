@@ -7,6 +7,7 @@
 // ツリーの深さに関わらずデッドロックしない。
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <winioctl.h>
 #include "engine.h"
 
 #include <string>
@@ -18,8 +19,11 @@
 #include <condition_variable>
 #include <atomic>
 #include <thread>
+#include <chrono>
 #include <queue>
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 
 namespace {
 
@@ -84,6 +88,10 @@ struct EntryBuilder {
     long long mtime_raw = 0;
     bool is_accessible = true;
     bool is_dir = true;
+    int scan_mode = 0; // 0: Win32 directory walk, 1: NTFS MFT
+    double mft_read_ms = 0.0;
+    double mft_tree_ms = 0.0;
+    double mft_build_ms = 0.0;
     std::vector<EntryBuilder> children;
 };
 
@@ -129,6 +137,10 @@ void FillCTree(const EntryBuilder& b, ScanEntryC& out) {
     out.mtime_raw = b.mtime_raw;
     out.is_accessible = b.is_accessible ? 1 : 0;
     out.is_dir = b.is_dir ? 1 : 0;
+    out.scan_mode = b.scan_mode;
+    out.mft_read_ms = b.mft_read_ms;
+    out.mft_tree_ms = b.mft_tree_ms;
+    out.mft_build_ms = b.mft_build_ms;
     out.child_count = static_cast<int>(b.children.size());
     if (out.child_count > 0) {
         out.children = new ScanEntryC[out.child_count];
@@ -157,6 +169,452 @@ using DoneFn = std::function<void(EntryBuilder)>;
 using ChildNotifyFn = std::function<void(const EntryBuilder&)>;
 
 void ScanNode(const std::wstring& path, ScanCtx& ctx, DoneFn on_done);
+
+// ---- NTFS MFT 高速スキャン -------------------------------------------------
+// NTFS ボリューム直下では、各ディレクトリを個別に開く代わりに $MFT を
+// 連続して読み、FILE レコードの親参照からツリーを復元する。管理者権限が
+// ない場合や、安全に解釈できない MFT では従来の Win32 列挙へ戻る。
+
+constexpr uint64_t kInvalidMftIndex = std::numeric_limits<uint64_t>::max();
+constexpr DWORD kNtfsAttributeStandardInformation = 0x10;
+constexpr DWORD kNtfsAttributeFileName = 0x30;
+constexpr DWORD kNtfsAttributeData = 0x80;
+constexpr DWORD kNtfsAttributeEnd = 0xFFFFFFFF;
+
+enum class MftScanResult { Success, Unavailable, Cancelled };
+
+struct MftRun {
+    uint64_t lcn = 0;
+    uint64_t clusters = 0;
+    bool sparse = false;
+};
+
+struct MftNode {
+    std::wstring name;
+    uint64_t parent = kInvalidMftIndex;
+    uint64_t first_child = kInvalidMftIndex;
+    uint64_t next_sibling = kInvalidMftIndex;
+    unsigned long long size = 0;
+    unsigned long long file_count = 0;
+    long long mtime_raw = 0;
+    uint16_t sequence = 0;
+    bool valid = false;
+    bool is_dir = false;
+    bool reparse = false;
+};
+
+template <typename T>
+bool ReadField(const uint8_t* data, size_t size, size_t offset, T& out) {
+    if (offset > size || sizeof(T) > size - offset) return false;
+    memcpy(&out, data + offset, sizeof(T));
+    return true;
+}
+
+bool ApplyNtfsFixup(uint8_t* record, size_t record_size, DWORD sector_size) {
+    uint16_t usa_offset = 0, usa_count = 0;
+    if (!ReadField(record, record_size, 4, usa_offset) ||
+        !ReadField(record, record_size, 6, usa_count) || usa_count < 2 ||
+        usa_offset + static_cast<size_t>(usa_count) * 2 > record_size || sector_size < 2)
+        return false;
+
+    uint16_t marker = 0;
+    memcpy(&marker, record + usa_offset, sizeof(marker));
+    for (uint16_t i = 1; i < usa_count; ++i) {
+        size_t tail = static_cast<size_t>(i) * sector_size - 2;
+        if (tail + 2 > record_size) return false;
+        uint16_t actual = 0;
+        memcpy(&actual, record + tail, sizeof(actual));
+        if (actual != marker) return false;
+        memcpy(record + tail, record + usa_offset + static_cast<size_t>(i) * 2, 2);
+    }
+    return true;
+}
+
+bool ParseRunList(const uint8_t* data, size_t size, std::vector<MftRun>& out) {
+    int64_t current_lcn = 0;
+    size_t pos = 0;
+    while (pos < size && data[pos] != 0) {
+        uint8_t header = data[pos++];
+        unsigned length_bytes = header & 0x0F;
+        unsigned offset_bytes = header >> 4;
+        if (length_bytes == 0 || length_bytes > 8 || offset_bytes > 8 ||
+            pos + length_bytes + offset_bytes > size) return false;
+
+        uint64_t clusters = 0;
+        for (unsigned i = 0; i < length_bytes; ++i)
+            clusters |= static_cast<uint64_t>(data[pos + i]) << (i * 8);
+        pos += length_bytes;
+        if (clusters == 0) return false;
+
+        MftRun run;
+        run.clusters = clusters;
+        run.sparse = (offset_bytes == 0);
+        if (!run.sparse) {
+            uint64_t raw_delta = 0;
+            for (unsigned i = 0; i < offset_bytes; ++i)
+                raw_delta |= static_cast<uint64_t>(data[pos + i]) << (i * 8);
+            if (offset_bytes < 8 && (data[pos + offset_bytes - 1] & 0x80))
+                raw_delta |= (~uint64_t{0}) << (offset_bytes * 8);
+            int64_t delta = static_cast<int64_t>(raw_delta);
+            if ((delta < 0 && current_lcn < -delta) ||
+                (delta > 0 && current_lcn > std::numeric_limits<int64_t>::max() - delta)) return false;
+            current_lcn += delta;
+            if (current_lcn < 0) return false;
+            run.lcn = static_cast<uint64_t>(current_lcn);
+        }
+        pos += offset_bytes;
+        out.push_back(run);
+    }
+    return !out.empty();
+}
+
+bool ReadVolumeAt(HANDLE volume, uint64_t offset, void* buffer, DWORD bytes) {
+    LARGE_INTEGER where;
+    where.QuadPart = static_cast<LONGLONG>(offset);
+    if (!SetFilePointerEx(volume, where, nullptr, FILE_BEGIN)) return false;
+    uint8_t* dst = static_cast<uint8_t*>(buffer);
+    DWORD total = 0;
+    while (total < bytes) {
+        DWORD got = 0;
+        if (!ReadFile(volume, dst + total, bytes - total, &got, nullptr) || got == 0) return false;
+        total += got;
+    }
+    return true;
+}
+
+int FileNameNamespacePriority(uint8_t ns) {
+    if (ns == 3) return 3; // Win32 + DOS
+    if (ns == 1) return 2; // Win32
+    if (ns == 0) return 1; // POSIX
+    return 0;              // DOS 8.3 alias
+}
+
+bool ParseMftRecord(uint8_t* record, size_t record_size, DWORD sector_size,
+                    uint64_t record_index, MftNode& out) {
+    if (record_size < 48 || memcmp(record, "FILE", 4) != 0 ||
+        !ApplyNtfsFixup(record, record_size, sector_size)) return false;
+
+    uint16_t sequence = 0, first_attribute = 0, flags = 0;
+    uint32_t bytes_in_use = 0;
+    uint64_t base_record = 0;
+    if (!ReadField(record, record_size, 16, sequence) ||
+        !ReadField(record, record_size, 20, first_attribute) ||
+        !ReadField(record, record_size, 22, flags) ||
+        !ReadField(record, record_size, 24, bytes_in_use) ||
+        !ReadField(record, record_size, 32, base_record) ||
+        !(flags & 0x0001) || base_record != 0 || first_attribute >= record_size) return false;
+
+    out.sequence = sequence;
+    out.is_dir = (flags & 0x0002) != 0;
+    int best_name_priority = -1;
+    size_t limit = std::min<size_t>(bytes_in_use, record_size);
+
+    for (size_t pos = first_attribute; pos + 16 <= limit;) {
+        uint32_t type = 0, attr_length = 0;
+        if (!ReadField(record, limit, pos, type) || type == kNtfsAttributeEnd) break;
+        if (!ReadField(record, limit, pos + 4, attr_length) ||
+            attr_length < 16 || attr_length > limit - pos) return false;
+
+        uint8_t non_resident = record[pos + 8];
+        uint8_t attr_name_length = record[pos + 9];
+        if (type == kNtfsAttributeStandardInformation && !non_resident) {
+            uint32_t value_length = 0;
+            uint16_t value_offset = 0;
+            if (ReadField(record, limit, pos + 16, value_length) &&
+                ReadField(record, limit, pos + 20, value_offset) &&
+                value_offset <= attr_length && value_length <= attr_length - value_offset) {
+                const uint8_t* value = record + pos + value_offset;
+                if (value_length >= 24) memcpy(&out.mtime_raw, value + 16, 8);
+                uint32_t file_attributes = 0;
+                if (value_length >= 36) memcpy(&file_attributes, value + 32, 4);
+                out.reparse = (file_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+            }
+        } else if (type == kNtfsAttributeFileName && !non_resident) {
+            uint32_t value_length = 0;
+            uint16_t value_offset = 0;
+            if (ReadField(record, limit, pos + 16, value_length) &&
+                ReadField(record, limit, pos + 20, value_offset) &&
+                value_offset <= attr_length && value_length <= attr_length - value_offset &&
+                value_length >= 66) {
+                const uint8_t* value = record + pos + value_offset;
+                uint8_t name_length = value[64];
+                uint8_t name_namespace = value[65];
+                size_t name_bytes = static_cast<size_t>(name_length) * sizeof(wchar_t);
+                int priority = FileNameNamespacePriority(name_namespace);
+                if (66 + name_bytes <= value_length && priority > best_name_priority) {
+                    uint64_t parent_ref = 0;
+                    memcpy(&parent_ref, value, 8);
+                    out.parent = parent_ref & 0x0000FFFFFFFFFFFFULL;
+                    out.name.assign(reinterpret_cast<const wchar_t*>(value + 66), name_length);
+                    uint32_t file_attributes = 0;
+                    memcpy(&file_attributes, value + 56, 4);
+                    out.reparse = out.reparse ||
+                                  ((file_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0);
+                    best_name_priority = priority;
+                }
+            }
+        } else if (type == kNtfsAttributeData && attr_name_length == 0 && !out.is_dir) {
+            if (!non_resident) {
+                uint32_t value_length = 0;
+                if (ReadField(record, limit, pos + 16, value_length)) out.size = value_length;
+            } else {
+                uint64_t lowest_vcn = 1, data_size = 0;
+                if (ReadField(record, limit, pos + 16, lowest_vcn) && lowest_vcn == 0 &&
+                    ReadField(record, limit, pos + 48, data_size)) out.size = data_size;
+            }
+        }
+        pos += attr_length;
+    }
+
+    if (record_index == 5) {
+        out.valid = true;
+        out.is_dir = true;
+    } else {
+        out.valid = best_name_priority >= 0 && !out.name.empty();
+    }
+    return out.valid;
+}
+
+bool ExtractMftLayout(uint8_t* record, size_t record_size, DWORD sector_size,
+                      std::vector<MftRun>& runs, uint64_t& data_size) {
+    if (record_size < 48 || memcmp(record, "FILE", 4) != 0 ||
+        !ApplyNtfsFixup(record, record_size, sector_size)) return false;
+    uint16_t first_attribute = 0;
+    uint32_t bytes_in_use = 0;
+    if (!ReadField(record, record_size, 20, first_attribute) ||
+        !ReadField(record, record_size, 24, bytes_in_use)) return false;
+    size_t limit = std::min<size_t>(bytes_in_use, record_size);
+    for (size_t pos = first_attribute; pos + 64 <= limit;) {
+        uint32_t type = 0, attr_length = 0;
+        if (!ReadField(record, limit, pos, type) || type == kNtfsAttributeEnd) break;
+        if (!ReadField(record, limit, pos + 4, attr_length) ||
+            attr_length < 16 || attr_length > limit - pos) return false;
+        uint8_t non_resident = record[pos + 8];
+        uint8_t name_length = record[pos + 9];
+        if (type == kNtfsAttributeData && non_resident && name_length == 0) {
+            uint64_t lowest_vcn = 1, highest_vcn = 0;
+            uint16_t run_offset = 0;
+            if (!ReadField(record, limit, pos + 16, lowest_vcn) || lowest_vcn != 0 ||
+                !ReadField(record, limit, pos + 24, highest_vcn) ||
+                !ReadField(record, limit, pos + 32, run_offset) ||
+                !ReadField(record, limit, pos + 48, data_size) || run_offset >= attr_length ||
+                !ParseRunList(record + pos + run_offset, attr_length - run_offset, runs)) return false;
+            uint64_t covered_clusters = 0;
+            for (const auto& run : runs) covered_clusters += run.clusters;
+            // $ATTRIBUTE_LIST に続きがある複雑な MFT は誤読しない。
+            return covered_clusters == highest_vcn + 1 && data_size > 0;
+        }
+        pos += attr_length;
+    }
+    return false;
+}
+
+bool IsNtfsVolumeRoot(const std::wstring& path, std::wstring& drive_root,
+                      std::wstring& volume_path) {
+    if (path.size() < 2 || path[1] != L':' || path.size() > 3 ||
+        (path.size() == 3 && path[2] != L'\\' && path[2] != L'/')) return false;
+    drive_root = path.substr(0, 2) + L"\\";
+    wchar_t fs_name[32] = {0};
+    if (!GetVolumeInformationW(drive_root.c_str(), nullptr, 0, nullptr, nullptr, nullptr,
+                               fs_name, _countof(fs_name)) || _wcsicmp(fs_name, L"NTFS") != 0)
+        return false;
+    volume_path = L"\\\\.\\" + path.substr(0, 2);
+    return true;
+}
+
+bool BuildEntryFromMft(uint64_t index, const std::wstring& path,
+                       const std::vector<MftNode>& nodes, EntryBuilder& out,
+                       const int* stop_flag, bool include_paths, size_t depth = 0) {
+    if (index >= nodes.size() || depth > 32768 || (stop_flag && *stop_flag != 0)) return false;
+    const MftNode& src = nodes[index];
+    out.name = src.name;
+    out.path = include_paths ? path : L"";
+    out.size = src.size;
+    out.file_count = src.file_count;
+    out.mtime_raw = src.mtime_raw;
+    out.is_dir = src.is_dir;
+    if (!src.is_dir) return true;
+
+    size_t child_count = 0;
+    for (uint64_t child = src.first_child; child != kInvalidMftIndex;
+         child = nodes[child].next_sibling) ++child_count;
+    out.children.reserve(child_count);
+    // 表示側(JS)が現在のソート列に応じて並べ替えるため、MFT経路では
+    // ここで全ディレクトリをサイズソートしない。
+    for (uint64_t child = src.first_child; child != kInvalidMftIndex;
+         child = nodes[child].next_sibling) {
+        std::wstring child_path;
+        if (include_paths) {
+            child_path = path;
+            if (!child_path.empty() && child_path.back() != L'\\') child_path += L'\\';
+            child_path += nodes[child].name;
+        }
+        EntryBuilder entry;
+        if (!BuildEntryFromMft(child, child_path, nodes, entry, stop_flag, include_paths, depth + 1)) return false;
+        out.children.push_back(std::move(entry));
+    }
+    return true;
+}
+
+MftScanResult TryScanNtfsMft(const std::wstring& requested_path, const int* stop_flag,
+                             EntryBuilder& root) {
+    auto mft_start = std::chrono::steady_clock::now();
+    std::wstring drive_root, volume_path;
+    if (!IsNtfsVolumeRoot(requested_path, drive_root, volume_path))
+        return MftScanResult::Unavailable;
+
+    HANDLE volume = CreateFileW(volume_path.c_str(), GENERIC_READ,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (volume == INVALID_HANDLE_VALUE) return MftScanResult::Unavailable;
+
+    NTFS_VOLUME_DATA_BUFFER volume_data{};
+    DWORD returned = 0;
+    if (!DeviceIoControl(volume, FSCTL_GET_NTFS_VOLUME_DATA, nullptr, 0,
+                         &volume_data, sizeof(volume_data), &returned, nullptr) ||
+        volume_data.BytesPerCluster == 0 || volume_data.BytesPerFileRecordSegment == 0 ||
+        volume_data.BytesPerFileRecordSegment > 1024 * 1024) {
+        CloseHandle(volume);
+        return MftScanResult::Unavailable;
+    }
+
+    const DWORD record_size = volume_data.BytesPerFileRecordSegment;
+    const DWORD sector_size = volume_data.BytesPerSector;
+    const uint64_t cluster_size = volume_data.BytesPerCluster;
+    uint8_t* first_record = static_cast<uint8_t*>(VirtualAlloc(nullptr, record_size,
+                                                               MEM_COMMIT | MEM_RESERVE,
+                                                               PAGE_READWRITE));
+    if (!first_record) {
+        CloseHandle(volume);
+        return MftScanResult::Unavailable;
+    }
+    uint64_t mft_offset = static_cast<uint64_t>(volume_data.MftStartLcn.QuadPart) * cluster_size;
+    if (!ReadVolumeAt(volume, mft_offset, first_record, record_size)) {
+        VirtualFree(first_record, 0, MEM_RELEASE);
+        CloseHandle(volume);
+        return MftScanResult::Unavailable;
+    }
+
+    std::vector<MftRun> runs;
+    uint64_t mft_data_size = 0;
+    bool layout_ok = ExtractMftLayout(first_record, record_size, sector_size, runs, mft_data_size);
+    VirtualFree(first_record, 0, MEM_RELEASE);
+    if (!layout_ok ||
+        mft_data_size / record_size > 100000000ULL) {
+        CloseHandle(volume);
+        return MftScanResult::Unavailable;
+    }
+
+    size_t record_count = static_cast<size_t>(mft_data_size / record_size);
+    std::vector<MftNode> nodes(record_count);
+    constexpr DWORD kReadChunk = 8 * 1024 * 1024;
+    uint8_t* io_buffer = static_cast<uint8_t*>(VirtualAlloc(nullptr, kReadChunk,
+                                                            MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    if (!io_buffer) {
+        CloseHandle(volume);
+        return MftScanResult::Unavailable;
+    }
+
+    auto read_start = std::chrono::steady_clock::now();
+    uint64_t logical_offset = 0;
+    bool read_ok = true;
+    for (const auto& run : runs) {
+        uint64_t run_bytes = run.clusters * cluster_size;
+        for (uint64_t within = 0; within < run_bytes && logical_offset < mft_data_size;) {
+            if (stop_flag && *stop_flag != 0) {
+                VirtualFree(io_buffer, 0, MEM_RELEASE);
+                CloseHandle(volume);
+                return MftScanResult::Cancelled;
+            }
+            uint64_t remaining = std::min(run_bytes - within, mft_data_size - logical_offset);
+            DWORD bytes = static_cast<DWORD>(std::min<uint64_t>(remaining, kReadChunk));
+            if (bytes % record_size != 0) bytes -= bytes % record_size;
+            if (bytes == 0 || run.sparse ||
+                !ReadVolumeAt(volume, run.lcn * cluster_size + within, io_buffer, bytes)) {
+                read_ok = false;
+                break;
+            }
+            size_t first_index = static_cast<size_t>(logical_offset / record_size);
+            size_t records = bytes / record_size;
+            for (size_t i = 0; i < records && first_index + i < nodes.size(); ++i) {
+                ParseMftRecord(io_buffer + i * record_size, record_size, sector_size,
+                               first_index + i, nodes[first_index + i]);
+            }
+            within += bytes;
+            logical_offset += bytes;
+        }
+        if (!read_ok || logical_offset >= mft_data_size) break;
+    }
+    VirtualFree(io_buffer, 0, MEM_RELEASE);
+    CloseHandle(volume);
+    double mft_read_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - read_start).count();
+    if (!read_ok || logical_offset < mft_data_size || nodes.size() <= 5 || !nodes[5].valid)
+        return MftScanResult::Unavailable;
+
+    auto tree_start = std::chrono::steady_clock::now();
+    nodes[5].name = BaseName(drive_root);
+    for (uint64_t i = 0; i < nodes.size(); ++i) {
+        MftNode& node = nodes[i];
+        if (i == 5 || !node.valid || node.reparse || node.parent >= nodes.size()) continue;
+        MftNode& parent = nodes[node.parent];
+        if (!parent.valid || !parent.is_dir || parent.reparse || node.parent == i) continue;
+        node.next_sibling = parent.first_child;
+        parent.first_child = i;
+    }
+
+    // ルートから到達できる部分だけを後順で集計する。
+    std::vector<uint8_t> state(nodes.size(), 0);
+    std::vector<std::pair<uint64_t, bool>> stack;
+    stack.emplace_back(5, false);
+    while (!stack.empty()) {
+        auto [index, exiting] = stack.back();
+        stack.pop_back();
+        if (index >= nodes.size()) continue;
+        if (exiting) {
+            MftNode& node = nodes[index];
+            if (node.is_dir) {
+                node.size = 0;
+                node.file_count = 0;
+                for (uint64_t child = node.first_child; child != kInvalidMftIndex;
+                     child = nodes[child].next_sibling) {
+                    if (state[child] == 2) {
+                        node.size += nodes[child].size;
+                        node.file_count += nodes[child].file_count;
+                    }
+                }
+            } else {
+                node.file_count = 1;
+            }
+            state[index] = 2;
+            continue;
+        }
+        if (state[index] != 0) continue;
+        state[index] = 1;
+        stack.emplace_back(index, true);
+        if (nodes[index].is_dir) {
+            for (uint64_t child = nodes[index].first_child; child != kInvalidMftIndex;
+                 child = nodes[child].next_sibling) {
+                if (state[child] == 0) stack.emplace_back(child, false);
+            }
+        }
+    }
+    double mft_tree_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - tree_start).count();
+
+    auto build_start = std::chrono::steady_clock::now();
+    root = EntryBuilder{};
+    // MFT JSONでは絶対パスを送らずJS側で復元するため、ネイティブ側でも
+    // 125万件分のフルパス文字列を生成・保持しない。
+    if (!BuildEntryFromMft(5, drive_root, nodes, root, stop_flag, false))
+        return (stop_flag && *stop_flag != 0) ? MftScanResult::Cancelled : MftScanResult::Unavailable;
+    root.scan_mode = 1;
+    root.mft_read_ms = mft_read_ms;
+    root.mft_tree_ms = mft_tree_ms;
+    root.mft_build_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - build_start).count();
+    return MftScanResult::Success;
+}
 
 // dir_paths を非ブロッキングでプールへ再投入し、全員完了したら node を完成させて
 // on_done を呼ぶ。notify が渡されていれば、各子ディレクトリが完了するたびに
@@ -322,6 +780,22 @@ extern "C" int scan_directory(
 ) {
     std::wstring root_path(root_path_w);
     if (!root_path.empty() && root_path.back() != L'\\') root_path += L'\\';
+
+    // NTFS ボリューム直下は、可能ならディレクトリ巡回前に MFT 高速経路を使う。
+    // 高速経路では巨大な部分木を進捗通知と完了通知で二重コピーしない。
+    EntryBuilder mft_root;
+    MftScanResult mft_result = TryScanNtfsMft(root_path, stop_flag, mft_root);
+    if (mft_result == MftScanResult::Success || mft_result == MftScanResult::Cancelled) {
+        if (mft_result == MftScanResult::Cancelled) {
+            mft_root = EntryBuilder{};
+            mft_root.path = root_path;
+            mft_root.name = BaseName(root_path);
+        }
+        ScanEntryC* out = new ScanEntryC();
+        FillCTree(mft_root, *out);
+        if (on_finished) on_finished(out, user_data);
+        return 0;
+    }
 
     ThreadPool pool(kMaxWorkers);
     std::unordered_map<std::wstring, const ScanEntryC*> cache_map;

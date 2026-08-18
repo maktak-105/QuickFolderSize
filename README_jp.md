@@ -38,6 +38,9 @@ Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 
 - 指定フォルダ以下を再帰スキャンし、サイズ・再帰ファイル数・更新日時を集計
 - バックグラウンドスキャン（UI をブロックしない）
 - 全深度並列スキャン: 共有 32 ワーカープール + 非ブロッキング fan-out。深い階層でも並列度が落ちない
+- NTFS ボリューム直下は MFT 高速スキャン。各フォルダを巡回せず、NTFS のファイルレコードからツリーを復元
+- MFT利用のためEXEは管理者権限を要求し、起動時にUAC確認を表示
+- MFTを利用できない場合（非NTFS、個別フォルダなど）はWin32 APIの汎用スキャンへ自動フォールバック
 - ルート直下の子が終わるたびにツリーを順次更新
 - スキャン開始と同時に直下 1 レベルをプレースホルダー表示
 - 左下のスキャン時間カードに経過秒を表示（0.2 秒ごとに更新、`0.00s` … `12.34s`）
@@ -94,6 +97,10 @@ dist\binary\QuickFolderSize.exe
 | `index.html` | バンドル済み UI（CSS/JS インライン） |
 
 **Microsoft Edge WebView2 Runtime** は Windows 11 に標準搭載です。一部の Windows 10 / LTSC / Server では、ウィンドウが出ない場合に Evergreen Runtime の追加インストールが必要です。起動に失敗したら EXE と同じ場所の `QuickFolderSize_debug.log` を見てください。
+
+### NTFS 高速スキャンについて
+
+ドライブ直下（例: `C:\`）では、NTFS の MFT（Master File Table）を直接読み取る高速経路を使用します。EXEは起動時に管理者権限を要求します。個別フォルダ、exFAT/FAT32、ネットワークパスでは従来の `FindFirstFileW` / `FindNextFileW` 列挙へ戻ります。
 
 配布パッケージ向けの説明: [`dist/documents/readme-jp.txt`](dist/documents/readme-jp.txt)（日本語）、[`dist/documents/readme.txt`](dist/documents/readme.txt)（英語）。
 

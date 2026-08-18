@@ -1,5 +1,11 @@
 QuickFolderSize - Change log
 
+Unreleased
+- Added an NTFS volume-root MFT fast path for elevated scans.
+- The EXE now requests administrator rights at startup so the MFT path is the default.
+- Added automatic Win32 scanner fallback when MFT access is unavailable.
+- Reduced MFT JSON payloads by reconstructing absolute paths in JavaScript.
+
 v1.0.0 (2026-08-17)
 - Native C++17 + WebView2 release (MinGW-w64 / g++)
 - Dark glassmorphism UI (HTML/CSS/vanilla JS)

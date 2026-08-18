@@ -19,3 +19,5 @@ dist/*.zip
 core/native/*.dll
 core/native/*.o
 core/native/*_debug.log
+.venv/
+*.py[cod]

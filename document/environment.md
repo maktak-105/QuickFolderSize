@@ -123,7 +123,9 @@ CI / Release ランナーは Chocolatey の MinGW を使う。`WEBVIEW2_INCLUDE`
 
 ## 依存関係
 
-Win32 API（`FindFirstFileW` / `FindNextFileW`, `IFileDialog`, `DwmSetWindowAttribute` 等）と WebView2 SDK のみ。サードパーティの C++ ライブラリ依存なし。フロントエンドはバニラ JS。
+Win32 API（`FindFirstFileW` / `FindNextFileW`, `DeviceIoControl` / NTFS MFT, `IFileDialog`, `DwmSetWindowAttribute` 等）と WebView2 SDK のみ。サードパーティの C++ ライブラリ依存なし。フロントエンドはバニラ JS。
+
+NTFS MFT 高速経路は、管理者権限で開いた `\\.\X:` ボリュームから `$MFT` のデータランを読み取る。EXEには`requireAdministrator`マニフェストを埋め込み、起動時にUAC確認を表示する。MFTレコードを安全に解釈できない場合、または対象がNTFSボリューム直下でない場合は、通常のWin32列挙にフォールバックする。
 
 ## ファイル構成
 

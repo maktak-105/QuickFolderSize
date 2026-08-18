@@ -38,6 +38,9 @@ Updates go through pull requests to `main`. Pushing a `v*` tag (or running the R
 - Recursive folder scan with sizes, recursive file counts, and last-modified times
 - Background scan (UI stays responsive)
 - Full-depth parallel scan: one shared 32-worker pool, non-blocking fan-out, so deep trees stay parallel
+- NTFS volume-root fast path: rebuilds the tree from NTFS MFT records instead of walking every directory
+- The EXE requests administrator rights at startup (UAC) so the MFT path is available by default
+- Automatic Win32 API fallback for non-NTFS volumes, individual folders, or network paths
 - Incremental tree updates as each top-level child finishes
 - Placeholder row for the first level as soon as a scan starts
 - Elapsed scan time in the left-bottom card, updated every 0.2 s (`0.00s` … `12.34s`)
@@ -94,6 +97,10 @@ Keep these files in the **same folder**:
 | `index.html` | Bundled UI (CSS/JS inlined) |
 
 Windows 11 already includes **Microsoft Edge WebView2 Runtime**. On some Windows 10 / LTSC / Server machines, install the Evergreen Runtime if the window fails to open. See `QuickFolderSize_debug.log` next to the EXE if startup fails.
+
+### NTFS fast scanning
+
+When scanning a volume root such as `C:\`, QuickFolderSize uses an NTFS Master File Table (MFT) fast path. The executable requests administrator rights at startup, so Windows displays a UAC confirmation. It reads NTFS file records and reconstructs the tree without opening every directory. Individual folders, exFAT/FAT32 volumes, and network paths use the regular `FindFirstFileW` / `FindNextFileW` scanner instead.
 
 Distribution notes for end users: [`dist/documents/readme.txt`](dist/documents/readme.txt) (English) and [`dist/documents/readme-jp.txt`](dist/documents/readme-jp.txt) (Japanese).
 
