@@ -27,7 +27,7 @@ Required files (keep together)
 - WebView2Loader.dll    Connects the app to WebView2 Runtime
 - index.html            UI (CSS and JavaScript are already inlined)
 - readme.txt            This file (English)
-- readme-jp.txt         Japanese version of this file
+- readme_jp.txt         Japanese version of this file
 - history.txt           Change log (English)
 - history_jp.txt        Change log (Japanese)
 - LICENSE.txt           MIT License (English original)

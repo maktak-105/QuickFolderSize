@@ -1,5 +1,7 @@
 # QuickFolderSize 仕様書
 
+[English spec.md](spec.md)
+
 ## 1. アプリ概要
 
 | 項目 | 内容 |

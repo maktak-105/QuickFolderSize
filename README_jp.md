@@ -26,7 +26,7 @@ ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行しま�
 - `engine_x64.dll` — スキャンエンジン単体 DLL
 - `WebView2Loader.dll` — WebView2 ローダー
 - `index.html` — バンドル済み UI
-- `readme.txt` / `readme-jp.txt` — 使い方
+- `readme.txt` / `readme_jp.txt` — 使い方
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
 Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 / LTSC / Server では Evergreen Runtime の追加インストールが必要です。
@@ -102,7 +102,7 @@ dist\binary\QuickFolderSize.exe
 
 ドライブ直下（例: `C:\`）では、NTFS の MFT（Master File Table）を直接読み取る高速経路を使用します。EXEは起動時に管理者権限を要求します。個別フォルダ、exFAT/FAT32、ネットワークパスでは従来の `FindFirstFileW` / `FindNextFileW` 列挙へ戻ります。
 
-配布パッケージ向けの説明: [`dist/documents/readme-jp.txt`](dist/documents/readme-jp.txt)（日本語）、[`dist/documents/readme.txt`](dist/documents/readme.txt)（英語）。
+配布パッケージ向けの説明: [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt)（日本語）、[`dist/documents/readme.txt`](dist/documents/readme.txt)（英語）。
 
 ## ソースからビルド
 

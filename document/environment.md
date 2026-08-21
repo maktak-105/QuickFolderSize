@@ -1,37 +1,39 @@
-# 開発環境
+# Development Environment
 
-## 実行環境
+[日本語版 environment_jp.md](environment_jp.md)
 
-| 項目 | 内容 |
-|:-----|:-----|
-| OS | Windows 10 / 11 (64bit) |
+## Runtime environment
+
+| Item | Details |
+| :--- | :--- |
+| OS | Windows 10 / 11 (64-bit) |
 | C++ | C++17 |
-| コンパイラ | MinGW-w64 (g++)。WinLibs (MCF threads, UCRT) `BrechtSanders.WinLibs.MCF.UCRT` 16.1.0-14.0.0-r1 で動作確認 |
-| Python | 3.x（`build_native.py` / `bundle_html.py` 用。配布アプリには不要） |
-| WebView2 SDK | ヘッダを `C:\tools\webview2\build\native\include` に配置（既定。`WEBVIEW2_INCLUDE` で変更可）。ローカル確認は NuGet `Microsoft.Web.WebView2` 1.0.4129.50 |
-| WebView2 Runtime | 実行時に必要（Windows 11 は標準搭載。Windows 10 / LTSC / Server は別途インストールすることがある） |
+| Compiler | MinGW-w64 (g++). Verified with WinLibs (MCF threads, UCRT) `BrechtSanders.WinLibs.MCF.UCRT` 16.1.0-14.0.0-r1 |
+| Python | 3.x (for `build_native.py` / `bundle_html.py` only; not needed by the distributed app) |
+| WebView2 SDK | Headers placed at `C:\tools\webview2\build\native\include` (default; change with `WEBVIEW2_INCLUDE`). Verified locally with NuGet `Microsoft.Web.WebView2` 1.0.4129.50 |
+| WebView2 Runtime | Required at runtime (bundled with Windows 11 by default; Windows 10 / LTSC / Server may need it installed separately) |
 
-## セットアップ
+## Setup
 
-### MinGWツールチェイン
+### MinGW toolchain
 
 ```powershell
 winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
 ```
 
-`build_native.py` は WinGet の既定インストール先を直接探す。`g++` が見つかったフォルダの `windres.exe` / `llvm-windres.exe` も同じ場所から探すので、ビルドだけなら PATH 追加は必須ではない。
+`build_native.py` searches the standard WinGet install location directly. It also looks for `windres.exe`/`llvm-windres.exe` in the same folder as the detected `g++`, so adding it to `PATH` isn't required just to build.
 
-`g++` / `windres` をターミナルから直接使いたい場合は、次をユーザー PATH に追加する:
+To invoke `g++`/`windres` directly from a terminal, add the following to the **user** PATH:
 
 ```text
 %LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.MCF.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin
 ```
 
-PATH 変更後はターミナル / IDE を再起動すること（既存セッションは古い PATH を保持する）。
+Restart your terminal/IDE after changing PATH (an already-open session keeps the old PATH).
 
 ### WebView2 SDK
 
-NuGet パッケージ `Microsoft.Web.WebView2` からヘッダ（`WebView2.h` 等）と `WebView2Loader.dll` を取得し、`C:\tools\webview2\build\native\` 以下に置く（`include\` と `x64\` を含む構成）。
+Get the headers (`WebView2.h`, etc.) and `WebView2Loader.dll` from the `Microsoft.Web.WebView2` NuGet package and place them under `C:\tools\webview2\build\native\` (with `include\` and `x64\` subfolders).
 
 ```powershell
 $nupkg = "$env:TEMP\Microsoft.Web.WebView2.nupkg"
@@ -40,9 +42,9 @@ Copy-Item $nupkg "$env:TEMP\Microsoft.Web.WebView2.zip" -Force
 Expand-Archive "$env:TEMP\Microsoft.Web.WebView2.zip" -DestinationPath C:\tools\webview2 -Force
 ```
 
-配置先を変えた場合は `WEBVIEW2_INCLUDE` / `WEBVIEW2_LOADER` で明示する。
+If you place it elsewhere, set `WEBVIEW2_INCLUDE` / `WEBVIEW2_LOADER` explicitly.
 
-疎通確認:
+Sanity check:
 
 ```powershell
 g++ --version
@@ -50,107 +52,107 @@ windres --version
 Test-Path C:\tools\webview2\build\native\include\WebView2.h
 ```
 
-## ビルド方法
+## Build method
 
 ```powershell
 cd QuickFolderSize
 build.bat
-# → dist\binary\QuickFolderSize.exe
+# -> dist\binary\QuickFolderSize.exe
 ```
 
-`build.bat` は `python build_native.py` を呼ぶ薄いラッパー。EXE が起動中だとリンクに失敗する（`Permission denied`）。閉じてから再実行する。
+`build.bat` is a thin wrapper around `python build_native.py`. Linking fails with `Permission denied` if the EXE is currently running — close it first and rerun.
 
-### ビルド手順の内訳（`build_native.py`）
+### Build steps (inside `build_native.py`)
 
-1. `bundle_html.py` が `templates/index.html` + `static/css/style.css` + `static/js/app.js` を自己完結の `dist/binary/index.html` 1枚へバンドルする。CSS/JS はインライン化、相対パスの `<img>`（About の `static/img/author.png`）は data URI に埋め込む（`NavigateToString` は外部リソースを解決できない）
-2. `windres` でアプリアイコン（`core/native/QuickFolderSize.ico`）をリソースオブジェクト化
-3. `core/native/engine.cpp` を `-shared -static -std=c++17` でコンパイルし `engine_x64.dll` を生成（単体成果物。EXE 実行時にはロードしない）
-4. `engine.cpp` + `webview_main.cpp` + リソースを `-mwindows -static` でコンパイルし `QuickFolderSize.exe` を生成（engine は静的リンク）
-5. `WebView2Loader.dll` と開発用テンプレート一式（`templates/`、`static/css`、`static/js`）を `dist/binary/` へコピー
+1. `bundle_html.py` bundles `templates/index.html` + `static/css/style.css` + `static/js/app.js` into a single self-contained `dist/binary/index.html`. CSS/JS are inlined, and relative `<img>` sources (the About dialog's `static/img/author.png`) are embedded as data URIs (`NavigateToString` can't resolve external resources).
+2. `windres` turns the app icon (`core/native/QuickFolderSize.ico`) into a resource object.
+3. `core/native/engine.cpp` is compiled with `-shared -static -std=c++17` into `engine_x64.dll` (a standalone artifact — not loaded by the EXE at runtime).
+4. `engine.cpp` + `webview_main.cpp` + the resource are compiled with `-mwindows -static` into `QuickFolderSize.exe` (the engine is statically linked in).
+5. `WebView2Loader.dll` and a development-template copy (`templates/`, `static/css`, `static/js`) are copied into `dist/binary/`.
 
-### ビルド成果物
+### Build output
 
-```
+```text
 dist/
-├── binary/                    # build.bat が生成（Git 管理外）
-│   ├── QuickFolderSize.exe    # メイン実行ファイル
-│   ├── engine_x64.dll         # スキャンエンジン DLL（単体成果物）
-│   ├── WebView2Loader.dll     # WebView2 ローダー
-│   ├── index.html             # バンドル済み自己完結 HTML（exe が読む）
-│   ├── templates/             # 開発用コピー（実行時は未使用）
-│   └── static/                # 開発用コピー（実行時は未使用）
-└── documents/                 # 配布用ドキュメント（Git 管理）
-    ├── readme.txt             # 英語
-    ├── readme-jp.txt          # 日本語
+├── binary/                    # generated by build.bat (not in git)
+│   ├── QuickFolderSize.exe    # main executable
+│   ├── engine_x64.dll         # scan-engine DLL (standalone artifact)
+│   ├── WebView2Loader.dll     # WebView2 loader
+│   ├── index.html             # bundled self-contained HTML (read by the exe)
+│   ├── templates/             # dev-time copy (unused at runtime)
+│   └── static/                # dev-time copy (unused at runtime)
+└── documents/                 # distribution docs (in git)
+    ├── readme.txt             # English
+    ├── readme_jp.txt          # Japanese
     ├── history.txt
     ├── history_jp.txt
-    ├── LICENSE.txt            # MIT 英語原文
-    └── LICENSE_jp.txt         # MIT 日本語参考訳
+    ├── LICENSE.txt            # MIT, English original
+    └── LICENSE_jp.txt         # MIT, Japanese reference translation
 ```
 
-> `QuickFolderSize.exe` は `WebView2Loader.dll` と `index.html` を自分と同じフォルダから探す。この3点は常に同じディレクトリに置く。
+> `QuickFolderSize.exe` looks for `WebView2Loader.dll` and `index.html` in its own folder. Keep all three together at all times.
 
-### 配布 ZIP（フラット）
+### Distribution ZIP (flat)
 
-Release 用 ZIP はサブフォルダを作らず、次を同じ階層に入れる。
+The release ZIP has no subfolders — everything sits at the same level:
 
 - `QuickFolderSize.exe`
 - `engine_x64.dll`
 - `WebView2Loader.dll`
 - `index.html`
-- `readme.txt` / `readme-jp.txt`
+- `readme.txt` / `readme_jp.txt`
 - `history.txt` / `history_jp.txt`
 - `LICENSE.txt` / `LICENSE_jp.txt`
 
 ## GitHub Actions
 
-| ワークフロー | 起動条件 | 内容 |
-|:-------------|:---------|:-----|
-| `.github/workflows/ci.yml` | `main` への push / pull_request | windows-latest で MinGW + WebView2 SDK を入れて `build_native.py` |
-| `.github/workflows/release.yml` | `v*` タグ、または workflow_dispatch | 同様にビルドし、フラットな `QuickFolderSize-binary.zip` を Release に添付 |
+| Workflow | Trigger | What it does |
+| :--- | :--- | :--- |
+| `.github/workflows/ci.yml` | push / pull_request to `main` | Installs MinGW + WebView2 SDK on windows-latest, runs `build_native.py` |
+| `.github/workflows/release.yml` | `v*` tag, or workflow_dispatch | Same build, then attaches a flat `QuickFolderSize-binary.zip` to the Release |
 
-CI / Release ランナーは Chocolatey の MinGW を使う。`WEBVIEW2_INCLUDE` はジョブ内で NuGet 展開先を指す。
+CI/Release runners use Chocolatey's MinGW. `WEBVIEW2_INCLUDE` points at the job's NuGet extraction path.
 
-今後の更新は `main` へのプルリクエスト。タグを push すると Release ZIP が同期される。
+Ship updates via pull request to `main`. Pushing a tag syncs the Release ZIP.
 
-## トラブルシューティング
+## Troubleshooting
 
-- 起動直後にウィンドウが出ない / エラーダイアログ: exe と同じフォルダの `QuickFolderSize_debug.log` を見る（WebView2 初期化の各ステップを記録）
-- `WebView2 Runtimeを初期化できませんでした`: Microsoft Edge WebView2 Runtime (Evergreen) を入れる
-- `WebView2 SDK headers not found`: `WEBVIEW2_INCLUDE` でヘッダの実パスを指定する
-- `llvm-windres/windres が見つかりませんでした`: コンパイラと同じ `mingw64\bin` に `windres.exe` があるか確認する
-- `cannot open output file ... QuickFolderSize.exe: Permission denied`: exe が起動中。終了してから `build.bat` を再実行する
+- Window doesn't appear at startup / an error dialog shows: check `QuickFolderSize_debug.log` next to the exe (it logs each WebView2 initialization step).
+- "Failed to initialize WebView2 Runtime": install Microsoft Edge WebView2 Runtime (Evergreen).
+- "WebView2 SDK headers not found": set `WEBVIEW2_INCLUDE` to the actual header path.
+- "llvm-windres/windres not found": check that `windres.exe` is in the same `mingw64\bin` as the compiler.
+- `cannot open output file ... QuickFolderSize.exe: Permission denied`: the exe is still running — close it and rerun `build.bat`.
 
-## 依存関係
+## Dependencies
 
-Win32 API（`FindFirstFileW` / `FindNextFileW`, `DeviceIoControl` / NTFS MFT, `IFileDialog`, `DwmSetWindowAttribute` 等）と WebView2 SDK のみ。サードパーティの C++ ライブラリ依存なし。フロントエンドはバニラ JS。
+Only the Win32 API (`FindFirstFileW`/`FindNextFileW`, `DeviceIoControl`/NTFS MFT, `IFileDialog`, `DwmSetWindowAttribute`, etc.) and the WebView2 SDK. No third-party C++ library dependencies. The frontend is vanilla JS.
 
-NTFS MFT 高速経路は、管理者権限で開いた `\\.\X:` ボリュームから `$MFT` のデータランを読み取る。EXEには`requireAdministrator`マニフェストを埋め込み、起動時にUAC確認を表示する。MFTレコードを安全に解釈できない場合、または対象がNTFSボリューム直下でない場合は、通常のWin32列挙にフォールバックする。
+The NTFS MFT fast path reads `$MFT` data runs from a `\\.\X:` volume opened with administrator rights. The EXE embeds a `requireAdministrator` manifest and shows a UAC prompt at startup. If MFT records can't be safely interpreted, or the target isn't the root of an NTFS volume, it falls back to regular Win32 enumeration.
 
-## ファイル構成
+## File layout
 
-```
+```text
 QuickFolderSize/
 ├── core/native/
-│   ├── engine.h / engine.cpp     スキャンエンジン
-│   ├── webview_main.cpp          WebView2ホスト・WebMessage・ダイアログ
-│   ├── QuickFolderSize.rc / .ico アイコン
-├── templates/index.html          開発用 HTML
+│   ├── engine.h / engine.cpp     scan engine
+│   ├── webview_main.cpp          WebView2 host, WebMessage, dialogs
+│   ├── QuickFolderSize.rc / .ico icon
+├── templates/index.html          dev-time HTML
 ├── static/
 │   ├── css/style.css
 │   ├── js/app.js
-│   └── img/author.png            About ダイアログ用（バンドル時に埋め込み）
-├── assets/                       README 用スクリーンショット
-├── python/                       Phase 1 プロトタイプ（参照用）
+│   └── img/author.png            for the About dialog (embedded when bundled)
+├── assets/                       README screenshots
+├── python/                       Phase 1 prototype (reference only)
 ├── document/
 │   ├── spec.md
-│   ├── environment.md            本ファイル
+│   ├── environment.md            this file
 │   └── about.md
 ├── dist/
-│   ├── binary/                   ビルド成果物（Git 管理外）
-│   └── documents/                配布 readme / history / LICENSE
-├── .github/workflows/            CI と Release
-├── LICENSE                       リポジトリ用 MIT（英語原文）
+│   ├── binary/                   build output (not in git)
+│   └── documents/                distribution readme / history / LICENSE
+├── .github/workflows/            CI and Release
+├── LICENSE                       repository MIT license (English original)
 ├── README.md / README_jp.md
 ├── build_native.py
 ├── bundle_html.py

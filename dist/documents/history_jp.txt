@@ -12,7 +12,7 @@ v2.0.1 (2026-08-18)
 - 全深度並列スキャン、mtime キャッシュ、ジャンクション除外
 - 表示言語の日本語 ⇔ English 切替
 - スキャン時間カードに経過秒を表示（0.2 秒ごとに更新）
-- 配布ドキュメント: readme.txt（英語）、readme-jp.txt（日本語）、history.txt / history_jp.txt
+- 配布ドキュメント: readme.txt（英語）、readme_jp.txt（日本語）、history.txt / history_jp.txt
 
 --- それ以前の開発（Python / PyQt6 プロトタイプ） ---
 

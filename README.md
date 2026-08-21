@@ -26,7 +26,7 @@ Extract every file into the same folder and run `QuickFolderSize.exe`.
 - `engine_x64.dll` — standalone scan-engine DLL
 - `WebView2Loader.dll` — WebView2 loader
 - `index.html` — bundled UI
-- `readme.txt` / `readme-jp.txt` — usage notes
+- `readme.txt` / `readme_jp.txt` — usage notes
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
 Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server machines, install Microsoft Edge WebView2 Runtime (Evergreen).
@@ -102,7 +102,7 @@ Windows 11 already includes **Microsoft Edge WebView2 Runtime**. On some Windows
 
 When scanning a volume root such as `C:\`, QuickFolderSize uses an NTFS Master File Table (MFT) fast path. The executable requests administrator rights at startup, so Windows displays a UAC confirmation. It reads NTFS file records and reconstructs the tree without opening every directory. Individual folders, exFAT/FAT32 volumes, and network paths use the regular `FindFirstFileW` / `FindNextFileW` scanner instead.
 
-Distribution notes for end users: [`dist/documents/readme.txt`](dist/documents/readme.txt) (English) and [`dist/documents/readme-jp.txt`](dist/documents/readme-jp.txt) (Japanese).
+Distribution notes for end users: [`dist/documents/readme.txt`](dist/documents/readme.txt) (English) and [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt) (Japanese).
 
 ## Build from source
 
