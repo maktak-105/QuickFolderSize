@@ -49,7 +49,7 @@ jobs:
             'dist/binary/WebView2Loader.dll',
             'dist/binary/index.html',
             'dist/documents/readme.txt',
-            'dist/documents/readme-jp.txt',
+            'dist/documents/readme_jp.txt',
             'dist/documents/history.txt',
             'dist/documents/history_jp.txt',
             'dist/documents/LICENSE.txt',

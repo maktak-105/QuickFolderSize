@@ -12,7 +12,7 @@ v2.0.1 (2026-08-18)
 - Parallel full-depth scan, mtime cache, junction skip
 - Japanese / English language toggle
 - Scan Time card shows live elapsed seconds (updates every 0.2 s)
-- Distribution docs: readme.txt (English), readme-jp.txt (Japanese), history.txt / history_jp.txt
+- Distribution docs: readme.txt (English), readme_jp.txt (Japanese), history.txt / history_jp.txt
 
 --- earlier development (Python / PyQt6 prototype) ---
 

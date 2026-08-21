@@ -1,20 +1,27 @@
-# QuickFolderSize バージョン情報
+# QuickFolderSize — About
 
-## バージョン
+[日本語版 about_jp.md](about_jp.md)
+
+## Version
+
 Ver. v2.0.1
 
-## 表示言語
-画面右上のボタンで 日本語 ⇔ English を切り替え可能（メニュー・ステータス・レポート出力すべてに反映）
+## Display language
 
-## 開発環境
-- C++17（MinGW-w64 / g++、WinLibs MCF UCRT）
-- WebView2（Microsoft Edge WebView2 Runtime）
-- Win32 API（FindFirstFileW/FindNextFileW, IFileDialog, DwmSetWindowAttribute 等）
+Toggle Japanese / English with the button in the top-right of the menu bar (applies immediately to menus, status, and report output).
 
-サードパーティのC++ライブラリ依存なし。フロントエンド(HTML/CSS/JS)もフレームワーク非依存。
+## Development environment
 
-## 旧実装(参照用)
-Phase 1のPythonプロトタイプ(PyQt6ベース)は `python/` に残っている。
+- C++17 (MinGW-w64 / g++, WinLibs MCF UCRT)
+- WebView2 (Microsoft Edge WebView2 Runtime)
+- Win32 API (FindFirstFileW/FindNextFileW, IFileDialog, DwmSetWindowAttribute, etc.)
 
-## 制作者
+No third-party C++ library dependencies. The frontend (HTML/CSS/JS) is framework-free.
+
+## Previous implementation (reference)
+
+The Phase 1 Python prototype (PyQt6-based) remains in `python/` for reference.
+
+## Author
+
 GitHub: maktak-105

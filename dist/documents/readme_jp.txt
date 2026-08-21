@@ -27,7 +27,7 @@ QuickFolderSize は、ローカルのフォルダやドライブをスキャン�
 - WebView2Loader.dll    WebView2 Runtime への接続用ローダー
 - index.html            UI（CSS / JavaScript は埋め込み済み）
 - readme.txt            英語版の説明
-- readme-jp.txt         このファイル
+- readme_jp.txt         このファイル
 - history.txt           更新履歴（英語）
 - history_jp.txt        更新履歴（日本語）
 - LICENSE.txt           MIT License（英語原文）
