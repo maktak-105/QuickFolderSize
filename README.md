@@ -145,7 +145,7 @@ QuickFolderSize/
 ├── core/native/          Scan engine + WebView2 host (C++)
 ├── templates/            Dev HTML
 ├── static/css|js         Dev CSS / JS
-├── python/               Phase 1 Python/PyQt6 prototype (reference only)
+├── python/prototype/     Phase 1 Python/PyQt6 prototype (reference only)
 ├── document/             Spec, environment, about
 ├── dist/binary/          Build output (not in git)
 ├── dist/documents/       Packaged readme / history

@@ -16,7 +16,7 @@ Ver. v2.0.1
 サードパーティのC++ライブラリ依存なし。フロントエンド(HTML/CSS/JS)もフレームワーク非依存。
 
 ## 旧実装(参照用)
-Phase 1のPythonプロトタイプ(PyQt6ベース)は `python/` に残っている。
+Phase 1のPythonプロトタイプ(PyQt6ベース)は `python/prototype/` に残っている。
 
 ## 制作者
 GitHub: maktak-105

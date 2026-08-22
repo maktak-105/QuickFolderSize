@@ -145,7 +145,7 @@ QuickFolderSize/
 ├── core/native/          スキャンエンジン + WebView2 ホスト（C++）
 ├── templates/            開発用 HTML
 ├── static/css|js         開発用 CSS / JS
-├── python/               Phase 1 の Python/PyQt6 プロトタイプ（参照用）
+├── python/prototype/     Phase 1 の Python/PyQt6 プロトタイプ（参照用）
 ├── document/             仕様・開発環境・バージョン情報
 ├── dist/binary/          ビルド成果物（Git 管理外）
 ├── dist/documents/       配布用 readme / history
