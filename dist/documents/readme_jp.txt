@@ -40,6 +40,7 @@ QuickFolderSize.exe を WebView2Loader.dll と index.html から
 --------
 - Windows 10 / 11（64bit）
 - Microsoft Edge WebView2 Runtime
+- EXE はデフォルトで管理者権限を要求し、起動時にUAC確認を表示します
 
 WebView2 Runtime について
 -------------------------
@@ -56,6 +57,7 @@ WebView2Loader.dll は Runtime 本体ではなく、接続用のローダーで�
 
 主な機能
 --------
+- NTFSドライブ直下では、管理者権限でMFT高速スキャンを使用
 - フォルダサイズ・再帰ファイル数・更新日時の集計
 - バックグラウンドスキャン（操作できるまま計測）
 - 全階層の並列スキャン（ワーカー 32）
