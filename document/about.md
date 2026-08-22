@@ -20,7 +20,7 @@ No third-party C++ library dependencies. The frontend (HTML/CSS/JS) is framework
 
 ## Previous implementation (reference)
 
-The Phase 1 Python prototype (PyQt6-based) remains in `python/` for reference.
+The Phase 1 Python prototype (PyQt6-based) remains in `python/prototype/` for reference.
 
 ## Author
 

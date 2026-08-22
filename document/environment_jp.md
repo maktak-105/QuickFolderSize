@@ -143,7 +143,7 @@ QuickFolderSize/
 │   ├── js/app.js
 │   └── img/author.png            About ダイアログ用（バンドル時に埋め込み）
 ├── assets/                       README 用スクリーンショット
-├── python/                       Phase 1 プロトタイプ（参照用）
+├── python/prototype/             Phase 1 プロトタイプ（参照用）
 ├── document/
 │   ├── spec.md
 │   ├── environment.md            本ファイル

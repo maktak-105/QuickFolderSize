@@ -143,7 +143,7 @@ QuickFolderSize/
 │   ├── js/app.js
 │   └── img/author.png            for the About dialog (embedded when bundled)
 ├── assets/                       README screenshots
-├── python/                       Phase 1 prototype (reference only)
+├── python/prototype/             Phase 1 prototype (reference only)
 ├── document/
 │   ├── spec.md
 │   ├── environment.md            this file

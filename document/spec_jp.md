@@ -15,7 +15,7 @@
 
 > 開発環境・ビルド手順 → `document/environment.md` を参照
 
-Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植した。UIロジック・アーキテクチャはワークスペース内の `QuickDiskBench`（C++/MinGW/WebView2、実績あり）を踏襲している。旧Python実装は `python/` に参照用として残っている。
+Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植した。UIロジック・アーキテクチャはワークスペース内の `QuickDiskBench`（C++/MinGW/WebView2、実績あり）を踏襲している。旧Python実装は `python/prototype/` に参照用として残っている。
 
 ---
 
