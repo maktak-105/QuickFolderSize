@@ -646,7 +646,44 @@ static void LOG(const char* fmt, ...) {
     fprintf(g_log, "\n"); fflush(g_log);
 }
 
+// The embedded manifest requests elevation, but explicitly relaunch through
+// the UAC "runas" verb as a fallback for shells or compatibility layers that
+// do not honor the manifest on the initial launch.
+static int EnsureAdministrator() {
+    HANDLE token = NULL;
+    TOKEN_ELEVATION elevation = {0};
+    DWORD returned = 0;
+    bool elevated = false;
+
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        elevated = GetTokenInformation(
+            token, TokenElevation, &elevation, sizeof(elevation), &returned
+        ) && elevation.TokenIsElevated != 0;
+        CloseHandle(token);
+    }
+    if (elevated) return 1;
+
+    wchar_t exePath[MAX_PATH] = {0};
+    if (GetModuleFileNameW(NULL, exePath, MAX_PATH) == 0) return -1;
+
+    SHELLEXECUTEINFOW executeInfo = {0};
+    executeInfo.cbSize = sizeof(executeInfo);
+    executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+    executeInfo.lpVerb = L"runas";
+    executeInfo.lpFile = exePath;
+    executeInfo.nShow = SW_SHOWNORMAL;
+
+    if (!ShellExecuteExW(&executeInfo)) {
+        return GetLastError() == ERROR_CANCELLED ? 0 : -1;
+    }
+    if (executeInfo.hProcess) CloseHandle(executeInfo.hProcess);
+    return 0;
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
+    int elevationResult = EnsureAdministrator();
+    if (elevationResult != 1) return elevationResult == 0 ? 0 : 1;
+
     LOG("[1] WinMain entered");
 
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
