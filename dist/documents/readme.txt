@@ -1,5 +1,5 @@
 QuickFolderSize - Folder Size Viewer
-Distribution package  v2.0.1
+Distribution package  v2.1.1
 
 GitHub
 ------
@@ -22,10 +22,8 @@ How to start
 
 Required files (keep together)
 ------------------------------
-- QuickFolderSize.exe   Main application
-- engine_x64.dll        Standalone scan-engine DLL (not loaded by the EXE)
+- QuickFolderSize.exe   Main application (UI is embedded in the EXE)
 - WebView2Loader.dll    Connects the app to WebView2 Runtime
-- index.html            UI (CSS and JavaScript are already inlined)
 - readme.txt            This file (English)
 - readme_jp.txt         Japanese version of this file
 - history.txt           Change log (English)
@@ -33,8 +31,13 @@ Required files (keep together)
 - LICENSE.txt           MIT License (English original)
 - LICENSE_jp.txt        MIT License (Japanese translation)
 
-Do not move QuickFolderSize.exe away from WebView2Loader.dll and
-index.html. The EXE looks for both in its own folder.
+Optional:
+- QuickFolderSize_cli.exe   Command-line build. See "Command-line
+  version" below. Not required for the GUI app; it has no
+  dependencies of its own.
+
+Do not move QuickFolderSize.exe away from WebView2Loader.dll.
+The EXE looks for it in its own folder.
 
 Requirements
 ------------
@@ -66,12 +69,38 @@ Features
   without scanning again (F5 forces a rescan)
 - Junctions, mount points, and other reparse points are skipped
 - Faster rescan when folder timestamps have not changed
-- Markdown report (File > Export Report...)
+- Report export: Markdown (File > Export Report...) or JSON (File > Export Report (JSON)...), same schema as the CLI build
 - Language toggle: Japanese / English (top-right of the menu bar)
+- Optional CLI build (QuickFolderSize_cli.exe) that prints scan results as JSON, for scripts and AI agents
 
 NTFS fast path
 --------------
 When scanning a volume root such as C:\, QuickFolderSize reads NTFS MFT records directly and reconstructs the tree without opening every directory. The EXE requests administrator rights at startup, which triggers a UAC confirmation. If the volume is not NTFS, the target is an individual folder or network path, the regular FindFirstFileW / FindNextFileW scanner is used instead.
+
+Command-line version
+---------------------
+QuickFolderSize_cli.exe is a standalone console build for scripts and AI agents. It has no companion files and does not request administrator rights, so it never blocks on a UAC prompt.
+
+Usage:
+  QuickFolderSize_cli.exe <path> [--pretty] [--version]
+
+- Prints one JSON object to stdout on success (UTF-8). Prints
+  {"error": "..."} to stderr and exits non-zero on failure.
+- Exit code: 0 = success, 1 = path not found / not a directory.
+- --pretty prints indented JSON (default is a compact single line).
+- --version prints the CLI version and exits.
+- The JSON schema is identical to File > Export Report (JSON) in
+  the GUI: path, scanned_at, total_size, subfolder_count,
+  file_count_recursive, and a nested "tree".
+- Because there is no administrator manifest, the NTFS MFT fast
+  path is only used if the CLI happens to be launched from an
+  already-elevated shell; otherwise it automatically falls back to
+  the regular folder scanner (same fallback the GUI uses).
+- Each run is a fresh process with no cache from previous runs, so
+  every invocation does a full scan.
+
+Example:
+  QuickFolderSize_cli.exe C:\Users\me\Downloads > report.json
 
 Keyboard shortcuts
 ------------------

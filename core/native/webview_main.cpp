@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <mutex>
 #include <atomic>
 #include <thread>
@@ -24,6 +25,7 @@
 
 #define WM_POST_JSON (WM_APP + 1)
 #define IDI_ICON1 101
+#define IDR_INDEX_HTML 201
 
 // ===== WebView2 動的ローダー用の型・COMコールバック(QuickDiskBenchと同一定型) =====
 typedef HRESULT (STDAPICALLTYPE *CreateEnvFn)(
@@ -313,16 +315,18 @@ std::wstring ShowFolderPickerDialog(HWND owner, const std::wstring& initial_dir)
     return result;
 }
 
-std::wstring ShowSaveFileDialog(HWND owner, const std::wstring& default_name) {
+std::wstring ShowSaveFileDialog(HWND owner, const std::wstring& default_name, const std::wstring& default_ext) {
     std::wstring result;
     IFileDialog* pfd = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd)))) {
         COMDLG_FILTERSPEC filters[] = {
             { L"Markdown Files (*.md)", L"*.md" },
+            { L"JSON Files (*.json)", L"*.json" },
             { L"All Files (*.*)", L"*.*" }
         };
-        pfd->SetFileTypes(2, filters);
-        pfd->SetDefaultExtension(L"md");
+        pfd->SetFileTypes(3, filters);
+        pfd->SetFileTypeIndex(default_ext == L"json" ? 2 : 1);
+        pfd->SetDefaultExtension(default_ext.c_str());
         pfd->SetFileName(default_name.c_str());
         if (SUCCEEDED(pfd->Show(owner))) {
             IShellItem* item = nullptr;
@@ -545,10 +549,142 @@ void HandleNavExpand(const std::wstring& path) {
     if (g_webview) g_webview->PostWebMessageAsJson(ss.str().c_str());
 }
 
-void HandleExportReport(const std::wstring& content, const std::wstring& default_name) {
-    std::wstring name = default_name.empty() ? L"report.md" : default_name;
-    std::wstring path = ShowSaveFileDialog(g_hWnd, name);
-    if (path.empty()) return; // キャンセル時はPython版と同様に何もしない
+// ===== レポート生成(ネイティブ側) =====
+// content文字列をJS側で作ってWebMessage経由で送る旧方式は、大きなツリー
+// (数万〜数十万ノード)だと数十MBの文字列がWebView2のpostMessageを往復する
+// ことになり、実用不能なほど遅くなる(手書きの ExtractJsonString がフラット
+// な文字列前提で全体を線形走査する点も含め)。ネイティブ側はスキャン結果
+// (g_prevRoot)をすでにメモリ上に持っているため、レポート本文はここで直接
+// 組み立ててファイルへ書く。WebMessageで渡すのは format/lang の2文字列だけ。
+
+std::wstring FormatSizeHuman(unsigned long long bytes) {
+    struct Unit { const wchar_t* name; double threshold; };
+    static const Unit units[] = {
+        { L"GB", 1024.0 * 1024.0 * 1024.0 },
+        { L"MB", 1024.0 * 1024.0 },
+        { L"KB", 1024.0 },
+    };
+    for (const auto& u : units) {
+        if ((double)bytes >= u.threshold) {
+            wchar_t buf[64];
+            swprintf_s(buf, L"%.1f %s", (double)bytes / u.threshold, u.name);
+            return buf;
+        }
+    }
+    return std::to_wstring(bytes) + L" B";
+}
+
+std::wstring FormatThousands(unsigned long long n) {
+    std::wstring digits = std::to_wstring(n);
+    std::wstring out;
+    int sinceComma = 0;
+    for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
+        out.push_back(*it);
+        if (++sinceComma % 3 == 0 && (it + 1) != digits.rend()) out.push_back(L',');
+    }
+    std::reverse(out.begin(), out.end());
+    return out;
+}
+
+int CountSubdirs(const ScanEntryC& node) {
+    int count = 0;
+    for (int i = 0; i < node.child_count; ++i) if (node.children[i].is_dir) ++count;
+    return count;
+}
+
+std::wstring BuildJsonReport(const ScanEntryC& root) {
+    SYSTEMTIME st; GetLocalTime(&st);
+    wchar_t ts[32];
+    swprintf_s(ts, L"%04d-%02d-%02dT%02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+    std::wstringstream ss;
+    ss << L"{\"path\":\"" << JsonEscape(root.path) << L"\","
+       << L"\"scanned_at\":\"" << ts << L"\","
+       << L"\"total_size\":" << root.size << L","
+       << L"\"subfolder_count\":" << CountSubdirs(root) << L","
+       << L"\"file_count_recursive\":" << root.file_count << L","
+       << L"\"tree\":";
+    SerializeEntryJson(root, ss, false);
+    ss << L"}";
+    return ss.str();
+}
+
+void RenderMdNode(const ScanEntryC& node, int depth, bool ja, std::wstring& out) {
+    std::vector<const ScanEntryC*> children;
+    children.reserve(node.child_count);
+    for (int i = 0; i < node.child_count; ++i) children.push_back(&node.children[i]);
+    std::sort(children.begin(), children.end(),
+              [](const ScanEntryC* a, const ScanEntryC* b) { return a->size > b->size; });
+
+    for (const ScanEntryC* c : children) {
+        double ratio = node.size > 0 ? (100.0 * (double)c->size / (double)node.size) : 0.0;
+        wchar_t ratioBuf[16];
+        swprintf_s(ratioBuf, L"%.1f", ratio);
+        std::wstring indent(static_cast<size_t>(depth) * 2, L' ');
+        if (c->is_dir) {
+            out += indent + L"- \U0001F4C1 **" + c->name + L"** — " + FormatSizeHuman(c->size)
+                 + L" (" + ratioBuf + L"%)  "
+                 + (ja ? (L"ファイル: " + FormatThousands(c->file_count) + L"個")
+                       : (L"Files: " + FormatThousands(c->file_count)))
+                 + L"\n";
+            RenderMdNode(*c, depth + 1, ja, out);
+        } else {
+            out += indent + L"- \U0001F4C4 " + c->name + L" — " + FormatSizeHuman(c->size)
+                 + L" (" + ratioBuf + L"%)\n";
+        }
+    }
+}
+
+std::wstring BuildMdReport(const ScanEntryC& root, bool ja) {
+    SYSTEMTIME st; GetLocalTime(&st);
+    wchar_t dt[24];
+    swprintf_s(dt, L"%04d/%02d/%02d %02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute);
+    wchar_t dtSec[24];
+    swprintf_s(dtSec, L"%04d/%02d/%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+    std::wstring out;
+    out += ja ? L"# フォルダ使用容量レポート\n\n" : L"# Folder Size Report\n\n";
+    out += ja ? L"| 項目 | 値 |\n|:-----|:---|\n" : L"| Item | Value |\n|:-----|:---|\n";
+    out += (ja ? L"| パス | `" : L"| Path | `") + std::wstring(root.path) + L"` |\n";
+    out += (ja ? L"| スキャン日時 | " : L"| Scan Date | ") + std::wstring(dt) + L" |\n";
+    out += (ja ? L"| 合計サイズ | " : L"| Total Size | ") + FormatSizeHuman(root.size) + L" |\n";
+    out += (ja ? L"| サブフォルダ数 | " : L"| Subfolders | ") + FormatThousands(CountSubdirs(root)) + L" |\n";
+    out += (ja ? L"| ファイル数（再帰） | " : L"| Files (recursive) | ") + FormatThousands(root.file_count) + L" |\n\n";
+    out += ja ? L"## フォルダ構成\n\n" : L"## Folder Structure\n\n";
+    out += ja ? L"サイズ降順・階層表示。ファイルは各フォルダ内にインデントで記載。\n\n"
+              : L"Sorted by size (descending), shown hierarchically. Files are indented within each folder.\n\n";
+    RenderMdNode(root, 0, ja, out);
+    out += L"\n---\n*";
+    out += ja ? L"生成日時: " : L"Generated at: ";
+    out += dtSec;
+    out += L"*\n";
+    return out;
+}
+
+void HandleExportReport(const std::wstring& format, const std::wstring& lang) {
+    std::wstring ext = (format == L"json") ? L"json" : L"md";
+
+    const ScanEntryC* root = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_prevRootMtx);
+        root = g_prevRoot;
+    }
+    if (!root) return; // スキャン未完了(メニュー側でも無効化されるが念のため)
+
+    std::wstring content = (format == L"json") ? BuildJsonReport(*root) : BuildMdReport(*root, lang != L"en");
+
+    SYSTEMTIME st; GetLocalTime(&st);
+    wchar_t name[64];
+    swprintf_s(name, L"report_%04d%02d%02d_%02d%02d%02d.%s",
+               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, ext.c_str());
+
+    std::wstring path = ShowSaveFileDialog(g_hWnd, name, ext);
+    if (path.empty()) {
+        // キャンセル時は保存もアラートも出さないが、JS側の「作成中」表示は
+        // 消す必要があるため完了通知だけは送る
+        if (g_webview) g_webview->PostWebMessageAsJson(L"{\"type\":\"export_result\",\"cancelled\":true}");
+        return;
+    }
 
     bool ok = false;
     std::ofstream out(path.c_str(), std::ios::binary);
@@ -615,14 +751,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return 0;
 }
 
-std::wstring ReadUtf8FileToWString(const std::wstring& path) {
-    std::ifstream file(path.c_str(), std::ios::binary);
-    if (!file.is_open()) return L"";
-    std::string str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (str.empty()) return L"";
-    int count = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.length(), NULL, 0);
+// バンドル済みindex.htmlはQuickFolderSize.rcでRCDATAとしてEXEに埋め込まれている
+// (ビルド時にbundle_html.pyがcore/native/index_embed.htmlへ書き出したもの)。
+// ディスクからは読まない。
+std::wstring LoadEmbeddedIndexHtml() {
+    HRSRC hRes = FindResourceW(NULL, MAKEINTRESOURCEW(IDR_INDEX_HTML), (LPCWSTR)RT_RCDATA);
+    if (!hRes) return L"";
+    HGLOBAL hData = LoadResource(NULL, hRes);
+    if (!hData) return L"";
+    DWORD size = SizeofResource(NULL, hRes);
+    const char* data = static_cast<const char*>(LockResource(hData));
+    if (!data || size == 0) return L"";
+    int count = MultiByteToWideChar(CP_UTF8, 0, data, (int)size, NULL, 0);
     std::wstring wstr(count, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.length(), &wstr[0], count);
+    MultiByteToWideChar(CP_UTF8, 0, data, (int)size, &wstr[0], count);
     return wstr;
 }
 
@@ -727,21 +869,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     size_t lastSlash = appDir.find_last_of(L"\\/");
     if (lastSlash != std::wstring::npos) appDir = appDir.substr(0, lastSlash);
 
-    std::wstring htmlFile = appDir + L"\\index.html";
-    if (GetFileAttributesW(htmlFile.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        htmlFile = appDir + L"\\templates\\index.html";
-    }
-    LOG("[6] HTML file: %S (exists=%d)", htmlFile.c_str(),
-        GetFileAttributesW(htmlFile.c_str()) != INVALID_FILE_ATTRIBUTES ? 1 : 0);
-
-    std::wstring htmlContent = ReadUtf8FileToWString(htmlFile);
-    LOG("[7] htmlContent size: %zu chars", htmlContent.size());
+    std::wstring htmlContent = LoadEmbeddedIndexHtml();
+    LOG("[6] Embedded HTML resource size: %zu chars", htmlContent.size());
 
     wchar_t tempPath[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPath);
     std::wstring userDataFolder = std::wstring(tempPath) + L"QuickFolderSize_WVData";
     CreateDirectoryW(userDataFolder.c_str(), NULL);
-    LOG("[8] User data folder: %S", userDataFolder.c_str());
+    LOG("[7] User data folder: %S", userDataFolder.c_str());
 
     std::wstring loaderDll = appDir + L"\\WebView2Loader.dll";
     HMODULE hLoader = LoadLibraryW(loaderDll.c_str());
@@ -754,7 +889,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
                     L"QuickFolderSize Error", MB_ICONERROR);
         return 1;
     }
-    LOG("[9] WebView2Loader.dll loaded");
+    LOG("[8] WebView2Loader.dll loaded");
 
     CreateEnvFn createEnv = (CreateEnvFn)GetProcAddress(hLoader, "CreateCoreWebView2EnvironmentWithOptions");
     if (!createEnv) {
@@ -762,13 +897,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         MessageBoxW(g_hWnd, L"WebView2: CreateCoreWebView2EnvironmentWithOptions not found", L"QuickFolderSize Error", MB_ICONERROR);
         return 1;
     }
-    LOG("[10] createEnv proc found, calling...");
+    LOG("[9] createEnv proc found, calling...");
 
     createEnv(
         nullptr, userDataFolder.c_str(), nullptr,
         new EnvCompletedHandler(
             [htmlContent](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                LOG("[11] EnvCompletedHandler called, HRESULT=0x%08X, env=%p", (unsigned)result, (void*)env);
+                LOG("[10] EnvCompletedHandler called, HRESULT=0x%08X, env=%p", (unsigned)result, (void*)env);
                 if (FAILED(result) || !env) {
                     wchar_t msg[512];
                     swprintf_s(msg, L"WebView2 Runtimeを初期化できませんでした。\n\n"
@@ -783,7 +918,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
                 env->CreateCoreWebView2Controller(g_hWnd,
                     new ControllerCompletedHandler(
                         [htmlContent](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                            LOG("[12] ControllerCompletedHandler called, HRESULT=0x%08X, ctrl=%p", (unsigned)result, (void*)controller);
+                            LOG("[11] ControllerCompletedHandler called, HRESULT=0x%08X, ctrl=%p", (unsigned)result, (void*)controller);
                             if (FAILED(result) || !controller) {
                                 wchar_t msg[256];
                                 swprintf_s(msg, L"WebView2 controller creation failed: 0x%08X", (unsigned)result);
@@ -833,10 +968,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
                                             std::wstring path;
                                             if (ExtractJsonString(msg, L"path", path)) HandleNavExpand(path);
                                         } else if (cmd == L"export_report") {
-                                            std::wstring content, default_name;
-                                            ExtractJsonString(msg, L"content", content);
-                                            ExtractJsonString(msg, L"default_name", default_name);
-                                            HandleExportReport(content, default_name);
+                                            std::wstring format, lang;
+                                            ExtractJsonString(msg, L"format", format);
+                                            ExtractJsonString(msg, L"lang", lang);
+                                            HandleExportReport(format, lang);
                                         } else if (cmd == L"quit") {
                                             PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
                                         }
@@ -845,9 +980,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
                                 ), &token
                             );
 
-                            LOG("[13] Calling NavigateToString, htmlContent.size=%zu", htmlContent.size());
+                            LOG("[12] Calling NavigateToString, htmlContent.size=%zu", htmlContent.size());
                             if (htmlContent.empty()) {
-                                MessageBoxW(g_hWnd, L"index.html の読み込みに失敗しました。\nQuickFolderSize.exe と同じフォルダに配置してください。",
+                                MessageBoxW(g_hWnd, L"埋め込みHTMLリソースの読み込みに失敗しました(ビルド不整合の可能性)。",
                                             L"QuickFolderSize Error", MB_ICONERROR);
                             } else {
                                 g_webview->NavigateToString(htmlContent.c_str());
@@ -861,7 +996,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         )
     );
 
-    LOG("[14] Entering message loop");
+    LOG("[13] Entering message loop");
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
@@ -870,7 +1005,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     OleUninitialize();
     CoUninitialize();
-    LOG("[15] Exiting WinMain");
+    LOG("[14] Exiting WinMain");
     if (g_log) fclose(g_log);
     return (int)msg.wParam;
 }

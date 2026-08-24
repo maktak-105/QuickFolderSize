@@ -1,14 +1,12 @@
 # QuickFolderSize
 
-[日本語版 README_jp.md](README_jp.md)
-
 <p align="center">
   <img src="assets/quickfoldersize-gui-en.png" alt="QuickFolderSize English GUI" width="720">
 </p>
 
 Windows desktop app that shows how much space folders and files use on local drives. Scan a path, browse the result as a sortable tree with ratio bars, and export a Markdown report.
 
-Version: **v2.0.1**
+Version: **v2.1.1**
 
 Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanilla JS hosted in a native WebView2 window. There is no Python or Qt runtime in the shipped app.
 
@@ -22,10 +20,9 @@ If you only want to run the app, download the ZIP from GitHub Releases.
 
 Extract every file into the same folder and run `QuickFolderSize.exe`.
 
-- `QuickFolderSize.exe` — app
-- `engine_x64.dll` — standalone scan-engine DLL
-- `WebView2Loader.dll` — WebView2 loader
-- `index.html` — bundled UI
+- `QuickFolderSize.exe` — app (bundled UI is embedded in the EXE)
+- `QuickFolderSize_cli.exe` — optional CLI build; see [CLI](#cli) below
+- `WebView2Loader.dll` — WebView2 loader (required by `QuickFolderSize.exe`)
 - `readme.txt` / `readme_jp.txt` — usage notes
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
@@ -49,8 +46,9 @@ Updates go through pull requests to `main`. Pushing a `v*` tag (or running the R
 - Clicking a path already inside the current scan jumps the tree without rescanning
 - NTFS junctions / mount points / reparse points are skipped (no cycles, no other volumes)
 - mtime cache: unchanged directories skip re-enumeration on rescan (`FILETIME` compare)
-- Markdown folder-size report
+- Folder-size report, exported as Markdown or JSON (same schema as the [CLI](#cli))
 - Japanese / English toggle (menu bar, top right). Menus, headers, dialogs, and reports switch immediately
+- Optional CLI build (`QuickFolderSize_cli.exe`) that prints scan results as JSON for scripts and AI agents — see [CLI](#cli)
 
 ## UI
 
@@ -73,7 +71,7 @@ Layout:
 └────────────────────────────┴────────────────────────────────────┘
 ```
 
-- **File** — Open Folder (`Ctrl+O`), Rescan (`F5`), Export Report (`Ctrl+Shift+S`), Exit (`Ctrl+Q`)
+- **File** — Open Folder (`Ctrl+O`), Rescan (`F5`), Export Report as Markdown (`Ctrl+Shift+S`), Export Report as JSON, Exit (`Ctrl+Q`)
 - **Help** — About
 - **Language button** — Japanese ⇔ English
 - **Address bar** — drive capacity, path, Scan (Enter also starts a scan)
@@ -91,16 +89,48 @@ Keep these files in the **same folder**:
 
 | File | Role |
 |------|------|
-| `QuickFolderSize.exe` | Native host + scan engine (statically linked) |
-| `engine_x64.dll` | Standalone scan-engine DLL (the EXE does not load this at runtime) |
+| `QuickFolderSize.exe` | Native host + scan engine (statically linked), UI bundle embedded as a resource |
 | `WebView2Loader.dll` | WebView2 loader |
-| `index.html` | Bundled UI (CSS/JS inlined) |
 
 Windows 11 already includes **Microsoft Edge WebView2 Runtime**. On some Windows 10 / LTSC / Server machines, install the Evergreen Runtime if the window fails to open. See `QuickFolderSize_debug.log` next to the EXE if startup fails.
 
 ### NTFS fast scanning
 
 When scanning a volume root such as `C:\`, QuickFolderSize uses an NTFS Master File Table (MFT) fast path. The executable requests administrator rights at startup, so Windows displays a UAC confirmation. It reads NTFS file records and reconstructs the tree without opening every directory. Individual folders, exFAT/FAT32 volumes, and network paths use the regular `FindFirstFileW` / `FindNextFileW` scanner instead.
+
+## CLI
+
+`QuickFolderSize_cli.exe` is a standalone console build for scripts and AI agents — no GUI, no WebView2, no companion files. It shares the same scan engine as the GUI.
+
+```text
+QuickFolderSize_cli.exe <path> [--pretty] [--version]
+```
+
+- Scans `<path>` once (synchronously) and prints one JSON object to **stdout**, UTF-8 encoded, no trailing metadata. On error, prints `{"error": "..."}` to **stderr** and exits non-zero.
+- Exit code: `0` on success, `1` if the path doesn't exist / isn't a directory.
+- `--pretty` indents the JSON output; the default is a single compact line.
+- `--version` prints the CLI version and exits `0`.
+- The output schema is identical to the GUI's **Export Report (JSON)** output:
+
+  ```json
+  {
+    "path": "C:\\Users\\me\\Downloads\\",
+    "scanned_at": "2026-08-24T11:48:13",
+    "total_size": 1288490188,
+    "subfolder_count": 42,
+    "file_count_recursive": 1234,
+    "tree": {
+      "name": "Downloads", "path": "C:\\Users\\me\\Downloads\\",
+      "size": 1288490188, "file_count": 1234, "mtime_ms": 1737000000000,
+      "is_accessible": true, "is_dir": true,
+      "children": [ ]
+    }
+  }
+  ```
+
+- **No administrator manifest.** Unlike the GUI, the CLI does not request elevation, so it never blocks on a UAC prompt — it's safe to call from a non-interactive shell or agent. If it happens to be launched from an already-elevated shell and the target is an NTFS volume root, it automatically benefits from the MFT fast path; otherwise it transparently uses the regular Win32 scanner (same fallback the GUI uses).
+- **No cache between runs.** Each invocation is a fresh process, so it always does a full scan — there's no equivalent to the GUI's mtime-based rescan speedup.
+- Example: `QuickFolderSize_cli.exe C:\Users\me\Downloads | jq .total_size`
 
 Distribution notes for end users: [`dist/documents/readme.txt`](dist/documents/readme.txt) (English) and [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt) (Japanese).
 
@@ -116,7 +146,7 @@ build.bat
 # → dist\binary\QuickFolderSize.exe
 ```
 
-`build.bat` runs `python build_native.py`. That script finds WinLibs `g++`, bundles HTML, compiles `engine_x64.dll` and the GUI EXE (`-mwindows`, engine statically linked), and copies `WebView2Loader.dll`.
+`build.bat` runs `python build-tools\build_native.py`. That script finds WinLibs `g++`, bundles the HTML (embedding it into the GUI as an RCDATA resource), compiles the GUI EXE (`-mwindows`, engine statically linked) and the CLI EXE (console subsystem, no administrator manifest), and copies `WebView2Loader.dll`.
 
 Details: [`document/environment.md`](document/environment.md).
 
@@ -142,15 +172,15 @@ No third-party C++ libraries. The frontend is vanilla JS.
 
 ```
 QuickFolderSize/
-├── core/native/          Scan engine + WebView2 host (C++)
+├── core/native/          Scan engine + WebView2 host + CLI entry point (C++)
 ├── templates/            Dev HTML
 ├── static/css|js         Dev CSS / JS
+├── resources/help/       In-app help / operation manual source (help.md / help_jp.md)
 ├── python/prototype/     Phase 1 Python/PyQt6 prototype (reference only)
 ├── document/             Spec, environment, about
 ├── dist/binary/          Build output (not in git)
 ├── dist/documents/       Packaged readme / history
-├── build_native.py       Native build
-├── bundle_html.py        Inlines CSS/JS into one HTML file
+├── build-tools/          build_native.py (native build) + bundle_html.py (inlines CSS/JS into one HTML file)
 └── build.bat
 ```
 
@@ -159,7 +189,6 @@ QuickFolderSize/
 - Spec → [document/spec.md](document/spec.md)
 - Build environment → [document/environment.md](document/environment.md)
 - About / version → [document/about.md](document/about.md)
-- Japanese README → [README_jp.md](README_jp.md)
 
 ## Concept
 

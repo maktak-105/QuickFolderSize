@@ -1,5 +1,5 @@
 QuickFolderSize - フォルダ使用容量ビューワー
-配布パッケージ  v2.0.1
+配布パッケージ  v2.1.1
 
 GitHub
 ------
@@ -22,10 +22,8 @@ QuickFolderSize は、ローカルのフォルダやドライブをスキャン�
 
 必要なファイル（同じフォルダに置く）
 ------------------------------------
-- QuickFolderSize.exe   本体
-- engine_x64.dll        スキャンエンジン単体 DLL（EXE 実行時には使いません）
+- QuickFolderSize.exe   本体（UIはEXEに埋め込み済み）
 - WebView2Loader.dll    WebView2 Runtime への接続用ローダー
-- index.html            UI（CSS / JavaScript は埋め込み済み）
 - readme.txt            英語版の説明
 - readme_jp.txt         このファイル
 - history.txt           更新履歴（英語）
@@ -33,14 +31,18 @@ QuickFolderSize は、ローカルのフォルダやドライブをスキャン�
 - LICENSE.txt           MIT License（英語原文）
 - LICENSE_jp.txt        MIT License（日本語参考訳）
 
-QuickFolderSize.exe を WebView2Loader.dll と index.html から
+任意:
+- QuickFolderSize_cli.exe   コマンドライン版。「コマンドライン版」の
+  節を参照。GUI本体の動作には不要で、依存ファイルもありません。
+
+QuickFolderSize.exe を WebView2Loader.dll から
 離して置かないでください。EXE は自分と同じフォルダから探します。
 
 動作環境
 --------
 - Windows 10 / 11（64bit）
 - Microsoft Edge WebView2 Runtime
-- EXE はデフォルトで管理者権限を要求し、起動時にUAC確認を表示します
+- QuickFolderSize.exe（GUI）はデフォルトで管理者権限を要求し、起動時にUAC確認を表示します（QuickFolderSize_cli.exeは要求しません。「コマンドライン版」参照）
 
 WebView2 Runtime について
 -------------------------
@@ -68,8 +70,35 @@ WebView2Loader.dll は Runtime 本体ではなく、接続用のローダーで�
   （再スキャンは F5）
 - ジャンクション / マウントポイント等のリパースポイントは除外
 - 更新日時が変わっていないフォルダは再スキャンを高速化
-- Markdown レポート（ファイル > レポート作成...）
+- レポート出力: Markdown（ファイル > レポート作成...）または JSON（ファイル > レポート作成(JSON)...）、CLI版と同一スキーマ
 - 表示言語: 日本語 ⇔ English（メニューバー右端）
+- 任意のCLI版（QuickFolderSize_cli.exe）。スキャン結果をJSONで標準出力、スクリプト・AIエージェント向け
+
+コマンドライン版
+----------------
+QuickFolderSize_cli.exe は、スクリプトやAIエージェント向けの単体コンソール版です。依存ファイルはなく、管理者権限も要求しないためUACダイアログで止まりません。
+
+使い方:
+  QuickFolderSize_cli.exe <path> [--pretty] [--version]
+
+- 成功時はJSONオブジェクトを1個、標準出力へUTF-8で出力します。
+  失敗時は{"error": "..."}を標準エラー出力へ出し、終了コードは
+  非0になります。
+- 終了コード: 0=成功、1=パスが存在しない/ディレクトリでない。
+- --pretty でインデント付きの整形出力（既定はコンパクトな1行）。
+- --version でCLIのバージョンを表示して終了します。
+- JSONのスキーマは、GUIの「ファイル > レポート作成(JSON)...」と
+  同一です: path、scanned_at、total_size、subfolder_count、
+  file_count_recursive、入れ子の"tree"。
+- 管理者マニフェストを埋め込んでいないため、NTFS MFT高速経路は
+  すでに管理者権限のシェルから起動した場合のみ使われます。
+  それ以外は通常のフォルダスキャナへ自動的にフォールバックします
+  （GUIと同じフォールバック）。
+- 1回の実行ごとに独立したプロセスで、前回実行のキャッシュは
+  持たないため、毎回フルスキャンになります。
+
+例:
+  QuickFolderSize_cli.exe C:\Users\me\Downloads > report.json
 
 キーボードショートカット
 ------------------------
