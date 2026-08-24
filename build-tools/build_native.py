@@ -50,12 +50,16 @@ def build():
 
     print(f"[発見] 使用コンパイラ: {compiler}")
 
-    base_dir = os.path.dirname(__file__)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root (build-tools/ の親)
     native_dir = os.path.join(base_dir, "core", "native")
     engine_src = os.path.join(native_dir, "engine.cpp")
     webview_src = os.path.join(native_dir, "webview_main.cpp")
+    cli_src = os.path.join(native_dir, "main_cli.cpp")
     resource_src = os.path.join(native_dir, "QuickFolderSize.rc")
     resource_obj = os.path.join(native_dir, "QuickFolderSize_res.o")
+    cli_resource_src = os.path.join(native_dir, "QuickFolderSize_cli.rc")
+    cli_resource_obj = os.path.join(native_dir, "QuickFolderSize_cli_res.o")
+    embed_html = os.path.join(native_dir, "index_embed.html")
     webview_include = os.environ.get("WEBVIEW2_INCLUDE", r"C:\tools\webview2\build\native\include")
     if not os.path.isdir(webview_include):
         print(f"[エラー] WebView2 SDK headers not found: {webview_include}")
@@ -64,15 +68,17 @@ def build():
     dist_dir = os.path.join(base_dir, "dist")
     binary_dir = os.path.join(dist_dir, "binary")
     os.makedirs(binary_dir, exist_ok=True)
-    os.makedirs(os.path.join(binary_dir, "templates"), exist_ok=True)
     os.makedirs(os.path.join(binary_dir, "static", "css"), exist_ok=True)
     os.makedirs(os.path.join(binary_dir, "static", "js"), exist_ok=True)
 
     import bundle_html
     bundle_html.bundle(binary_dir)
+    # QuickFolderSize.rcがRCDATAとしてEXEに埋め込むためのコピー。
+    # windresの実行カレントディレクトリ(core/native)から相対参照する。
+    shutil.copy2(os.path.join(binary_dir, "index.html"), embed_html)
 
-    out_dll = os.path.join(native_dir, "engine_x64.dll")
     out_gui_exe = os.path.join(binary_dir, "QuickFolderSize.exe")
+    out_cli_exe = os.path.join(binary_dir, "QuickFolderSize_cli.exe")
 
     compiler_dir = os.path.dirname(compiler)
     windres = os.path.join(compiler_dir, "llvm-windres.exe")
@@ -83,36 +89,25 @@ def build():
     if not windres:
         print("[エラー] Windows resource compiler (llvm-windres/windres) が見つかりませんでした。")
         return False
+
     cmd_res = [windres, resource_src, "-O", "coff", "-o", resource_obj]
-    print(f"\n[0/2] アイコンリソースをビルド中: {' '.join(cmd_res)}")
+    print(f"\n[1/4] GUIリソースをビルド中: {' '.join(cmd_res)}")
     res_res = subprocess.run(cmd_res, capture_output=True, text=True, cwd=native_dir)
     if res_res.returncode != 0 or not os.path.exists(resource_obj):
-        print("[失敗] アイコンリソースのビルドに失敗しました:")
+        print("[失敗] GUIリソースのビルドに失敗しました:")
         print(res_res.stderr)
         return False
 
-    # 1. スキャンエンジンDLL(engine_x64.dll)をビルド
-    cmd_dll = [
-        compiler,
-        "-O3",
-        "-shared",
-        "-std=c++17",
-        "-static",
-        engine_src,
-        "-o", out_dll,
-        "-lkernel32",
-    ]
-    print(f"\n[1/2] エンジンDLL ビルド中: {' '.join(cmd_dll)}")
-    res_dll = subprocess.run(cmd_dll, capture_output=True, text=True)
-    if res_dll.returncode == 0 and os.path.exists(out_dll):
-        print(f"[成功] engine_x64.dll を生成しました ({os.path.getsize(out_dll)} bytes)")
-        shutil.copy2(out_dll, os.path.join(binary_dir, "engine_x64.dll"))
-    else:
-        print("[失敗] DLL ビルドに失敗しました:")
-        print(res_dll.stderr)
+    cmd_cli_res = [windres, cli_resource_src, "-O", "coff", "-o", cli_resource_obj]
+    print(f"\n[2/4] CLIリソースをビルド中: {' '.join(cmd_cli_res)}")
+    res_cli_res = subprocess.run(cmd_cli_res, capture_output=True, text=True, cwd=native_dir)
+    if res_cli_res.returncode != 0 or not os.path.exists(cli_resource_obj):
+        print("[失敗] CLIリソースのビルドに失敗しました:")
+        print(res_cli_res.stderr)
         return False
 
-    # 2. GUI本体(QuickFolderSize.exe)。engine.cppは静的リンクで直接コンパイルする
+    # 1. GUI本体(QuickFolderSize.exe)。engine.cppは静的リンクで直接コンパイルする。
+    #    バンドル済みindex.htmlはresource_obj経由でRCDATAとして埋め込まれる。
     cmd_gui = [
         compiler,
         "-O3",
@@ -134,7 +129,7 @@ def build():
         "-lcomctl32",
         "-lshell32",
     ]
-    print(f"\n[2/2] GUI (dist/binary/QuickFolderSize.exe) ビルド中: {' '.join(cmd_gui)}")
+    print(f"\n[3/4] GUI (dist/binary/QuickFolderSize.exe) ビルド中: {' '.join(cmd_gui)}")
     res_gui = subprocess.run(cmd_gui, capture_output=True, text=True)
     if res_gui.returncode == 0 and os.path.exists(out_gui_exe):
         print(f"[成功] QuickFolderSize.exe を生成しました ({os.path.getsize(out_gui_exe)} bytes)")
@@ -143,7 +138,32 @@ def build():
         print(res_gui.stderr)
         return False
 
-    # 3. WebView2Loader.dll と開発用テンプレート一式をコピー
+    # 2. CLI本体(QuickFolderSize_cli.exe)。管理者マニフェストは埋め込まない
+    #    (既定のasInvokerで起動し、AIエージェント/スクリプトからの非対話実行を妨げない)。
+    cmd_cli = [
+        compiler,
+        "-O3",
+        "-std=c++17",
+        "-static",
+        engine_src,
+        cli_src,
+        cli_resource_obj,
+        "-o", out_cli_exe,
+        "-lkernel32",
+        "-lshell32",
+    ]
+    print(f"\n[4/4] CLI (dist/binary/QuickFolderSize_cli.exe) ビルド中: {' '.join(cmd_cli)}")
+    res_cli = subprocess.run(cmd_cli, capture_output=True, text=True)
+    if res_cli.returncode == 0 and os.path.exists(out_cli_exe):
+        print(f"[成功] QuickFolderSize_cli.exe を生成しました ({os.path.getsize(out_cli_exe)} bytes)")
+    else:
+        print("[失敗] CLI ビルドに失敗しました:")
+        print(res_cli.stderr)
+        return False
+
+    # 3. WebView2Loader.dll と開発用CSS/JSをコピー
+    #    (index.htmlはEXEにRCDATA埋め込み済みのため、GUIはディスクの
+    #    templates/index.htmlを読まない。static/css・static/jsは開発用の控えとして残す)
     wv_loader = os.environ.get("WEBVIEW2_LOADER")
     if not wv_loader:
         wv_loader = os.path.join(os.path.dirname(webview_include), "x64", "WebView2Loader.dll")
@@ -154,7 +174,6 @@ def build():
     else:
         print(f"[警告] WebView2Loader.dll が見つかりませんでした: {wv_loader}")
 
-    shutil.copy2(os.path.join(base_dir, "templates", "index.html"), os.path.join(binary_dir, "templates", "index.html"))
     shutil.copy2(os.path.join(base_dir, "static", "css", "style.css"), os.path.join(binary_dir, "static", "css", "style.css"))
     shutil.copy2(os.path.join(base_dir, "static", "js", "app.js"), os.path.join(binary_dir, "static", "js", "app.js"))
 

@@ -2,7 +2,7 @@
 // python/mainwindow.py + model.py + navmodel.py + delegate.py + utils.py + i18n.py の
 // UIロジックをHTML/CSS/JS + WebView2 JSON WebMessageブリッジへ移植したもの。
 
-const APP_VERSION = 'v2.0.1';
+const APP_VERSION = 'v2.1.1';
 
 const I18N = {
   window_title: { ja: 'QuickFolderSize - フォルダ使用容量ビューワー', en: 'QuickFolderSize - Folder Size Viewer' },
@@ -15,8 +15,10 @@ const I18N = {
   act_open: { ja: 'フォルダを開く...', en: 'Open Folder...' },
   act_rescan: { ja: '再スキャン', en: 'Rescan' },
   act_report: { ja: 'レポート作成...', en: 'Export Report...' },
+  act_report_json: { ja: 'レポート作成(JSON)...', en: 'Export Report (JSON)...' },
   act_quit: { ja: '終了', en: 'Exit' },
   menu_help: { ja: 'ヘルプ', en: 'Help' },
+  act_help: { ja: 'ヘルプ...', en: 'Help...' },
   act_about: { ja: 'バージョン情報...', en: 'About...' },
 
   about_title: { ja: 'バージョン情報', en: 'About' },
@@ -36,8 +38,8 @@ const I18N = {
   err_folder_not_found: { ja: 'フォルダが見つかりません:\n{path}', en: 'Folder not found:\n{path}' },
   dlg_browse_title: { ja: 'フォルダを選択', en: 'Select Folder' },
 
-  report_title: { ja: 'レポート作成', en: 'Export Report' },
   report_need_scan: { ja: '先にスキャンを実行してください。', en: 'Please run a scan first.' },
+  report_generating: { ja: 'レポートを作成しています...', en: 'Generating report...' },
   report_done_text: { ja: 'レポートを保存しました:\n{path}', en: 'Report saved:\n{path}' },
   report_save_err_text: { ja: '保存に失敗しました:\n{path}', en: 'Failed to save:\n{path}' },
 
@@ -47,21 +49,6 @@ const I18N = {
   col_files: { ja: 'ファイル数', en: 'Files' },
   col_mtime: { ja: '更新日時', en: 'Modified' },
 
-  report_h1: { ja: '# フォルダ使用容量レポート', en: '# Folder Size Report' },
-  report_col_item: { ja: '項目', en: 'Item' },
-  report_col_value: { ja: '値', en: 'Value' },
-  report_path: { ja: 'パス', en: 'Path' },
-  report_scan_datetime: { ja: 'スキャン日時', en: 'Scan Date' },
-  report_total_size: { ja: '合計サイズ', en: 'Total Size' },
-  report_subfolder_count: { ja: 'サブフォルダ数', en: 'Subfolders' },
-  report_file_count_recursive: { ja: 'ファイル数（再帰）', en: 'Files (recursive)' },
-  report_h2_structure: { ja: '## フォルダ構成', en: '## Folder Structure' },
-  report_structure_desc: {
-    ja: 'サイズ降順・階層表示。ファイルは各フォルダ内にインデントで記載。',
-    en: 'Sorted by size (descending), shown hierarchically. Files are indented within each folder.',
-  },
-  report_file_suffix: { ja: 'ファイル: {count:,}個', en: 'Files: {count:,}' },
-  report_generated_at: { ja: '生成日時', en: 'Generated at' },
 };
 
 let currentLang = 'ja';
@@ -551,45 +538,24 @@ function renderScanTime() {
 }
 
 // ===== レポート出力 =====
+// レポート本文はネイティブ側(webview_main.cppのBuildJsonReport/BuildMdReport)で
+// スキャン結果(g_prevRoot)から直接組み立ててファイルへ書く。JSはformat/langだけ
+// 送る(以前はJS側で文字列を作りWebMessageで丸ごと転送していたが、数万ノード規模の
+// ツリーだと数十MBの文字列往復になり実用不能なほど遅くなっていたため)。
 
-function generateMdReport(root, scanTime) {
-  const dirCount = root.children.filter(c => c.is_dir).length;
-  const lines = [];
-  lines.push(tr('report_h1'), '');
-  lines.push(`| ${tr('report_col_item')} | ${tr('report_col_value')} |`);
-  lines.push('|:-----|:---|');
-  lines.push(`| ${tr('report_path')} | \`${root.path}\` |`);
-  lines.push(`| ${tr('report_scan_datetime')} | ${formatDateTime(scanTime.getTime(), false)} |`);
-  lines.push(`| ${tr('report_total_size')} | ${formatSize(root.size)} |`);
-  lines.push(`| ${tr('report_subfolder_count')} | ${dirCount.toLocaleString('en-US')} |`);
-  lines.push(`| ${tr('report_file_count_recursive')} | ${root.file_count.toLocaleString('en-US')} |`);
-  lines.push('', tr('report_h2_structure'), '', tr('report_structure_desc'), '');
-
-  function render(node, depth, parentSize) {
-    const indent = '  '.repeat(depth);
-    const ratio = parentSize > 0 ? (node.size / parentSize * 100) : 0;
-    if (node.is_dir) {
-      lines.push(`${indent}- 📁 **${node.name}** — ${formatSize(node.size)} (${ratio.toFixed(1)}%)  ${tr('report_file_suffix', { count: node.file_count })}`);
-      for (const c of node.children.slice().sort((a, b) => b.size - a.size)) render(c, depth + 1, node.size);
-    } else {
-      lines.push(`${indent}- 📄 ${node.name} — ${formatSize(node.size)} (${ratio.toFixed(1)}%)`);
-    }
-  }
-  for (const c of root.children.slice().sort((a, b) => b.size - a.size)) render(c, 0, root.size);
-
-  lines.push('', '---', `*${tr('report_generated_at')}: ${formatDateTime(Date.now(), true)}*`);
-  return lines.join('\n');
+function onExportReport(format) {
+  if (!scanTree) { alert(tr('report_need_scan')); return; }
+  showReportBusy(true);
+  sendCmd({ cmd: 'export_report', format, lang: currentLang });
 }
 
-function onExportReport() {
-  if (!scanTree) { alert(tr('report_need_scan')); return; }
-  const content = generateMdReport(scanTree, scanStartTime || new Date());
-  const now = new Date();
-  const defaultName = `report_${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}_${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}.md`;
-  sendCmd({ cmd: 'export_report', content, default_name: defaultName });
+function showReportBusy(visible) {
+  document.getElementById('report-busy').classList.toggle('hidden', !visible);
 }
 
 function onExportResult(msg) {
+  showReportBusy(false);
+  if (msg.cancelled) return;
   if (msg.success) alert(tr('report_done_text', { path: msg.path }));
   else alert(tr('report_save_err_text', { path: msg.path }));
 }
@@ -610,8 +576,10 @@ function onRescan() {
 }
 
 function setReportEnabled(enabled) {
-  const el = document.getElementById('act-report');
-  if (enabled) el.classList.remove('disabled'); else el.classList.add('disabled');
+  ['act-report', 'act-report-json'].forEach(id => {
+    const el = document.getElementById(id);
+    if (enabled) el.classList.remove('disabled'); else el.classList.add('disabled');
+  });
 }
 
 // ===== メニュー / About =====
@@ -639,6 +607,11 @@ function setupMenu() {
   document.getElementById('about-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'about-overlay') hideAbout();
   });
+
+  document.getElementById('help-close').addEventListener('click', hideHelp);
+  document.getElementById('help-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'help-overlay') hideHelp();
+  });
 }
 
 function closeAllMenus() {
@@ -650,9 +623,13 @@ function handleMenuAction(action) {
     case 'open': onBrowseClick(); break;
     case 'rescan': onRescan(); break;
     case 'report':
-      if (!document.getElementById('act-report').classList.contains('disabled')) onExportReport();
+      if (!document.getElementById('act-report').classList.contains('disabled')) onExportReport('md');
+      break;
+    case 'report_json':
+      if (!document.getElementById('act-report-json').classList.contains('disabled')) onExportReport('json');
       break;
     case 'quit': sendCmd({ cmd: 'quit' }); break;
+    case 'help': showHelp(); break;
     case 'about': showAbout(); break;
   }
 }
@@ -664,6 +641,93 @@ function showAbout() {
 
 function hideAbout() {
   document.getElementById('about-overlay').classList.add('hidden');
+}
+
+// ===== ヘルプ =====
+// resources/help/help.md・help_jp.md の原文がビルド時にwindow.HELP_MDへ
+// そのまま埋め込まれる(bundle_html.py参照)。ここでは表示に必要な最小限の
+// Markdown部分集合(見出し・段落・強調・コード・リンク・箇条書き・表)だけを
+// HTMLへ変換する(外部ライブラリ・CDNは使わない方針のため自前実装)。
+
+function mdInline(text) {
+  let out = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  // 相対パスのリンク(例: help.md)はアプリ内で開けないため、http(s)のみ実リンク化する
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, label, href) => {
+    return /^https?:\/\//.test(href) ? `<a href="${href}">${label}</a>` : label;
+  });
+  return out;
+}
+
+function renderMarkdown(md) {
+  const lines = md.split('\n');
+  let html = '';
+  let listTag = null;
+  let tableRows = [];
+
+  function closeList() {
+    if (listTag) { html += `</${listTag}>`; listTag = null; }
+  }
+
+  function flushTable() {
+    if (!tableRows.length) return;
+    const rows = tableRows.filter(l => !/^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/.test(l));
+    html += '<table>';
+    rows.forEach((row, i) => {
+      const cells = row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+      const tag = i === 0 ? 'th' : 'td';
+      html += '<tr>' + cells.map(c => `<${tag}>${mdInline(c)}</${tag}>`).join('') + '</tr>';
+    });
+    html += '</table>';
+    tableRows = [];
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith('|')) { tableRows.push(line); continue; }
+    flushTable();
+
+    const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (heading) {
+      closeList();
+      const level = heading[1].length;
+      html += `<h${level}>${mdInline(heading[2])}</h${level}>`;
+      continue;
+    }
+    const ol = /^\d+\.\s+(.*)$/.exec(line);
+    if (ol) {
+      if (listTag !== 'ol') { closeList(); html += '<ol>'; listTag = 'ol'; }
+      html += `<li>${mdInline(ol[1])}</li>`;
+      continue;
+    }
+    const ul = /^-\s+(.*)$/.exec(line);
+    if (ul) {
+      if (listTag !== 'ul') { closeList(); html += '<ul>'; listTag = 'ul'; }
+      html += `<li>${mdInline(ul[1])}</li>`;
+      continue;
+    }
+    closeList();
+    if (line === '') continue;
+    // 他言語版ファイルへのクロスリンク行(例: [English help.md](help.md))は
+    // アプリ内では開けないリンクなので、行ごと表示しない
+    if (/^\[[^\]]+\]\([^)]+\.md\)$/.test(line)) continue;
+    html += `<p>${mdInline(line)}</p>`;
+  }
+  flushTable();
+  closeList();
+  return html;
+}
+
+function showHelp() {
+  const md = (window.HELP_MD && window.HELP_MD[currentLang]) || '';
+  document.getElementById('help-content').innerHTML = renderMarkdown(md);
+  document.getElementById('help-overlay').classList.remove('hidden');
+}
+
+function hideHelp() {
+  document.getElementById('help-overlay').classList.add('hidden');
 }
 
 // ===== スプリッター =====
@@ -698,7 +762,7 @@ function setupShortcuts() {
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); onBrowseClick(); }
     else if (e.key === 'F5') { e.preventDefault(); onRescan(); }
-    else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); if (scanTree) onExportReport(); }
+    else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); if (scanTree) onExportReport('md'); }
     else if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); sendCmd({ cmd: 'quit' }); }
     else if (e.key === 'Escape') closeAllMenus();
   });

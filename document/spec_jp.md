@@ -1,12 +1,10 @@
 # QuickFolderSize 仕様書
 
-[English spec.md](spec.md)
-
 ## 1. アプリ概要
 
 | 項目 | 内容 |
 |:-----|:-----|
-| バージョン | v2.0.1 |
+| バージョン | v2.1.1 |
 | 目的 | ローカルドライブ・フォルダの使用容量を視覚的に把握する |
 | 対象OS | Windows 10 / 11 (64bit) |
 | 実装言語 | C++17（MinGW-w64 / g++）+ WebView2（HTML/CSS/JS） |
@@ -42,9 +40,9 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 └─────────────────────────────────────────────────────────┘
 ```
 
-- `engine.cpp` はDLL（`engine_x64.dll`）としてもビルドされるが、GUI実行ファイルにはソースを直接static linkする（QuickDiskBenchと同一方式）
+- `engine.cpp` は単体DLLとしては提供せず、GUI実行ファイル(`QuickFolderSize.exe`)・CLI実行ファイル(`QuickFolderSize_cli.exe`)の双方へソースを直接static linkする(QuickDiskBenchと同一方式)。両実行ファイルは同じ `engine.cpp`/`engine.h` を共有する
 - ネイティブ⇔JS間は `PostWebMessageAsJson` / `window.chrome.webview.postMessage` によるJSON文字列メッセージでやり取りする(WebMessageプロトコルは本ファイル5節を参照)
-- 配布用の `index.html` はビルド時に `bundle_html.py` が `templates/index.html` + `static/css/style.css` + `static/js/app.js` を1枚のHTMLへインライン化したもの。相対パスの `<img>` は data URI に埋め込む（`NavigateToString` は外部リソースを解決できないため）
+- バンドルHTMLはビルド時に `bundle_html.py` が `templates/index.html` + `static/css/style.css` + `static/js/app.js` を1枚のHTMLへインライン化し(相対パスの `<img>` は data URI に埋め込む。`NavigateToString` は外部リソースを解決できないため)、`core/native/index_embed.html` へコピーしたうえで `QuickFolderSize.rc` の `RCDATA` としてEXEへ埋め込む。GUIは起動時に `FindResourceW`/`LoadResource` で読み出すだけで、ディスク上の `index.html` には依存しない
 
 ---
 
@@ -63,7 +61,7 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 
 | エリア | 説明 |
 |:-------|:-----|
-| メニューバー | ファイル（開く / 再スキャン / レポート作成 / 終了）、ヘルプ（バージョン情報）。参照ダイアログはメニューまたは `Ctrl+O` のみ（アドレスバーに Browse ボタンはない） |
+| メニューバー | ファイル（開く / 再スキャン / レポート作成 / 終了）、ヘルプ（ヘルプ本文 / バージョン情報）。参照ダイアログはメニューまたは `Ctrl+O` のみ（アドレスバーに Browse ボタンはない） |
 | 言語切替ボタン | メニューバー右端。クリックで 日本語 ⇔ English。メニュー・列ヘッダー・ボタン・About・Markdownレポートが即時切替。ネイティブ通信なし。再起動で日本語に戻る |
 | ドライブ容量ラベル | アドレスバー左端。ボリュームラベル付きで使用量/総容量を表示（例: `C:\ (Windows-SSD) 426.7 GB / 930.4 GB`） |
 | パス入力・スキャン | フルパスを直接入力してスキャン。Enter でも開始 |
@@ -71,6 +69,7 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 | スキャン時間カード | 左ナビ下。スキャン中はボタン押下からの経過秒を 0.2 秒ごとに `X.XXs` で更新。完了後はラベルと秒数のあいだに `完了`（English: `Done`）を出し、同じ経過秒を固定表示する |
 | 右スキャンツリー | 結果の階層ツリー。▶/▼で展開。ヘッダークリックでソート（既定はサイズ降順）。行クリックでアドレスバーにそのパスを入れる |
 | About ダイアログ | ヘルプ → バージョン情報。開発環境・制作者の下に `static/img/author.png`（配布HTMLへ埋め込み） |
+| ヘルプダイアログ | ヘルプ → ヘルプ...。`resources/help/help.md`(英語)/`help_jp.md`(日本語)の原文をビルド時にHTMLへ埋め込み、表示言語に応じて自前のMarkdownサブセットレンダラーでHTML化して表示。スクロール可能なモーダル |
 
 ---
 
@@ -96,10 +95,13 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 | 列ソート | 各列ヘッダークリックで昇順/降順ソート(JS側で実装) |
 | 参照ダイアログ | `IFileDialog`(FOS_PICKFOLDERS)でフォルダ選択 |
 | ドライブ容量表示 | 選択フォルダのドライブの使用容量/総容量を `GetDiskFreeSpaceExW` で取得し表示 |
-| レポート出力 | Markdown 形式で階層フォルダ容量レポートを生成し、`IFileDialog`(保存)でファイル書き出し |
+| レポート出力(Markdown) | Markdown 形式で階層フォルダ容量レポートを生成し、`IFileDialog`(保存)でファイル書き出し |
+| レポート出力(JSON) | `path`/`scanned_at`/`total_size`/`subfolder_count`/`file_count_recursive`/`tree`を持つJSON形式でレポートを生成し、`IFileDialog`(保存)でファイル書き出し。CLI版(`QuickFolderSize_cli.exe`)のJSON出力と同一スキーマ |
 | アクセスエラー対応 | `GetFileAttributesExW` / `FindFirstFileW` が失敗したフォルダは `is_accessible=false` とし、行を赤字（`#ef4444`）で表示してクラッシュしない。ジャンクション等のリパースポイントは赤字ではなく再帰対象外 |
 | 表示言語切替 | `app.js` の `I18N` テーブルで全UI文言（メニュー・ボタン・列ヘッダー・About・スキャン完了ラベル・Markdownレポート）を管理。メニューバー右端のトグルで即時切替（ネイティブ通信なし、再起動で日本語に戻る） |
 | About | バージョン・開発環境・制作者と、ダイアログ下部の作者画像 |
+| ヘルプ本文表示 | `resources/help/`のMarkdown原稿をアプリ内モーダルで表示。外部ライブラリなしの自前レンダラー(見出し・段落・強調・コード・リンク・箇条書き・表のみ対応) |
+| CLI版 | `QuickFolderSize_cli.exe <path>`。GUIを介さず標準出力へJSON(レポート出力(JSON)と同一スキーマ)を返す。管理者権限は要求しない(非対話実行を妨げないため)。詳細は`README.md`/`README_jp.md`を参照 |
 
 ---
 
@@ -115,7 +117,7 @@ JS→native は `window.chrome.webview.postMessage({cmd: ..., ...})`、native→
 | `browse` | `initial` | フォルダ選択ダイアログを開く |
 | `scan` | `path` | 指定パスの再帰スキャンを開始(実行中スキャンがあればキャンセルしてから開始) |
 | `nav_expand` | `path` | 左ナビペイン用、直下サブディレクトリを非再帰で列挙 |
-| `export_report` | `content`, `default_name` | Markdown文字列を保存ダイアログ経由でファイル書き出し |
+| `export_report` | `format`(`md`/`json`), `lang`(`ja`/`en`) | レポート本文はJSからは送らない。ネイティブ側がスキャン結果(`g_prevRoot`)から直接組み立てて保存ダイアログ経由でファイル書き出しする(数万ノード規模のツリーで数十MBの文字列がWebMessageを往復し実用不能になっていたため、v2.1.1でこの方式に変更) |
 | `quit` | なし | アプリを終了 |
 
 ### native → JS

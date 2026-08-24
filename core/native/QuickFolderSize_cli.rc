@@ -1,8 +1,5 @@
 #define IDI_ICON1 101
-#define IDR_INDEX_HTML 201
 IDI_ICON1 ICON "QuickFolderSize.ico"
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "QuickFolderSize.manifest"
-IDR_INDEX_HTML RCDATA "index_embed.html"
 
 1 VERSIONINFO
 FILEVERSION 2,1,1,0
@@ -15,11 +12,11 @@ BEGIN
     BLOCK "041104b0"
     BEGIN
       VALUE "CompanyName", "maktak-105"
-      VALUE "FileDescription", "QuickFolderSize"
+      VALUE "FileDescription", "QuickFolderSize CLI"
       VALUE "FileVersion", "2.1.1.0"
-      VALUE "InternalName", "QuickFolderSize"
+      VALUE "InternalName", "QuickFolderSize_cli"
       VALUE "LegalCopyright", "MIT License"
-      VALUE "OriginalFilename", "QuickFolderSize.exe"
+      VALUE "OriginalFilename", "QuickFolderSize_cli.exe"
       VALUE "ProductName", "QuickFolderSize"
       VALUE "ProductVersion", "2.1.1.0"
     END

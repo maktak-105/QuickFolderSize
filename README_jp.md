@@ -1,14 +1,12 @@
 # QuickFolderSize
 
-[English README.md](README.md)
-
 <p align="center">
   <img src="assets/quickfoldersize-gui-ja.png" alt="QuickFolderSize 日本語 GUI" width="720">
 </p>
 
 ローカルドライブ・フォルダの使用容量を視覚的に把握するための Windows デスクトップアプリです。パスをスキャンし、割合バー付きのソート可能なツリーで結果を表示し、Markdown レポートを出力できます。
 
-バージョン: **v2.0.1**
+バージョン: **v2.1.1**
 
 実装: **C++17（MinGW-w64 / g++）+ WebView2**。UI はネイティブの WebView2 ウィンドウ上の HTML / CSS / バニラ JS です。配布アプリに Python や Qt のランタイムは含まれません。
 
@@ -22,10 +20,9 @@
 
 ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行します。
 
-- `QuickFolderSize.exe` — 本体
-- `engine_x64.dll` — スキャンエンジン単体 DLL
-- `WebView2Loader.dll` — WebView2 ローダー
-- `index.html` — バンドル済み UI
+- `QuickFolderSize.exe` — 本体(UIはEXEに埋め込み済み)
+- `QuickFolderSize_cli.exe` — 任意のCLI版。[CLI](#cli)を参照
+- `WebView2Loader.dll` — WebView2 ローダー(`QuickFolderSize.exe`に必須)
 - `readme.txt` / `readme_jp.txt` — 使い方
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
@@ -49,8 +46,9 @@ Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 
 - スキャン済みツリー内のパスは再スキャンせず即時表示切替
 - NTFS ジャンクション / マウントポイント / リパースポイントは再帰から除外
 - mtime キャッシュ: 変化のないディレクトリは再列挙をスキップ（`FILETIME` 比較）
-- Markdown 形式のフォルダ容量レポート
+- フォルダ容量レポート。Markdown または JSON で出力(スキーマは[CLI](#cli)と共通)
 - 日本語 ⇔ English（メニューバー右端）。メニュー・ヘッダー・ダイアログ・レポートが即時切替
+- 任意のCLI版(`QuickFolderSize_cli.exe`)。スキャン結果をJSONで標準出力し、スクリプト・AIエージェント向け。[CLI](#cli)を参照
 
 ## UI
 
@@ -73,7 +71,7 @@ QuickDiskBench と同じ系統のダーク・グラスモーフィズムです�
 └──────────────────────────────┴──────────────────────────────────┘
 ```
 
-- **ファイル** — フォルダを開く（`Ctrl+O`）、再スキャン（`F5`）、レポート作成（`Ctrl+Shift+S`）、終了（`Ctrl+Q`）
+- **ファイル** — フォルダを開く（`Ctrl+O`）、再スキャン（`F5`）、レポート作成 Markdown（`Ctrl+Shift+S`）、レポート作成 JSON、終了（`Ctrl+Q`）
 - **ヘルプ** — バージョン情報
 - **言語ボタン** — 日本語 ⇔ English
 - **アドレスバー** — ドライブ容量、パス、スキャン（Enter でも開始）
@@ -91,16 +89,48 @@ dist\binary\QuickFolderSize.exe
 
 | ファイル | 役割 |
 |----------|------|
-| `QuickFolderSize.exe` | ネイティブホスト + スキャンエンジン（静的リンク） |
-| `engine_x64.dll` | 単体のスキャンエンジン DLL（EXE 実行時にはロードしない） |
+| `QuickFolderSize.exe` | ネイティブホスト + スキャンエンジン（静的リンク）、UIはリソースとして埋め込み済み |
 | `WebView2Loader.dll` | WebView2 ローダー |
-| `index.html` | バンドル済み UI（CSS/JS インライン） |
 
 **Microsoft Edge WebView2 Runtime** は Windows 11 に標準搭載です。一部の Windows 10 / LTSC / Server では、ウィンドウが出ない場合に Evergreen Runtime の追加インストールが必要です。起動に失敗したら EXE と同じ場所の `QuickFolderSize_debug.log` を見てください。
 
 ### NTFS 高速スキャンについて
 
 ドライブ直下（例: `C:\`）では、NTFS の MFT（Master File Table）を直接読み取る高速経路を使用します。EXEは起動時に管理者権限を要求します。個別フォルダ、exFAT/FAT32、ネットワークパスでは従来の `FindFirstFileW` / `FindNextFileW` 列挙へ戻ります。
+
+## CLI
+
+`QuickFolderSize_cli.exe` は、スクリプトやAIエージェント向けの単体コンソール版です。GUIもWebView2も不要で、依存ファイルもありません。スキャンエンジンはGUIと共通です。
+
+```text
+QuickFolderSize_cli.exe <path> [--pretty] [--version]
+```
+
+- `<path>` を1回(同期的に)スキャンし、JSONオブジェクトを1個**標準出力**へUTF-8で出力します(末尾に余計な情報は付きません)。エラー時は`{"error": "..."}`を**標準エラー出力**へ出し、終了コードは非0になります。
+- 終了コード: 成功時`0`、パスが存在しない/ディレクトリでない場合`1`。
+- `--pretty` でインデント付きの整形出力(既定はコンパクトな1行)。
+- `--version` でCLIのバージョンを表示して終了(`0`)。
+- 出力スキーマはGUIの**レポート作成(JSON)**と同一です:
+
+  ```json
+  {
+    "path": "C:\\Users\\me\\Downloads\\",
+    "scanned_at": "2026-08-24T11:48:13",
+    "total_size": 1288490188,
+    "subfolder_count": 42,
+    "file_count_recursive": 1234,
+    "tree": {
+      "name": "Downloads", "path": "C:\\Users\\me\\Downloads\\",
+      "size": 1288490188, "file_count": 1234, "mtime_ms": 1737000000000,
+      "is_accessible": true, "is_dir": true,
+      "children": [ ]
+    }
+  }
+  ```
+
+- **管理者マニフェストを埋め込んでいません。** GUIと違い昇格を要求しないため、UACダイアログで止まりません。非対話シェルやエージェントから安全に呼べます。すでに管理者権限のシェルから起動した場合、対象がNTFSボリューム直下ならMFT高速経路の恩恵を受けます。それ以外は通常のWin32列挙(GUIと同じフォールバック)を使います。
+- **実行間のキャッシュはありません。** 1回の起動は独立したプロセスなので毎回フルスキャンになります。GUIのmtimeキャッシュによる再スキャン高速化に相当する機能はありません。
+- 例: `QuickFolderSize_cli.exe C:\Users\me\Downloads | jq .total_size`
 
 配布パッケージ向けの説明: [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt)（日本語）、[`dist/documents/readme.txt`](dist/documents/readme.txt)（英語）。
 
@@ -116,7 +146,7 @@ build.bat
 # → dist\binary\QuickFolderSize.exe
 ```
 
-`build.bat` は `python build_native.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドルし、`engine_x64.dll` と GUI EXE（`-mwindows`、エンジンは静的リンク）をコンパイルし、`WebView2Loader.dll` をコピーします。
+`build.bat` は `python build-tools\build_native.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドル(GUIへRCDATAとして埋め込み)し、GUI EXE（`-mwindows`、エンジンは静的リンク）とCLI EXE(コンソールサブシステム、管理者マニフェストなし)をコンパイルし、`WebView2Loader.dll` をコピーします。
 
 詳細は [`document/environment.md`](document/environment.md)。
 
@@ -142,24 +172,23 @@ build.bat
 
 ```
 QuickFolderSize/
-├── core/native/          スキャンエンジン + WebView2 ホスト（C++）
+├── core/native/          スキャンエンジン + WebView2 ホスト + CLIエントリーポイント（C++）
 ├── templates/            開発用 HTML
 ├── static/css|js         開発用 CSS / JS
+├── resources/help/       アプリ内ヘルプ・操作説明書の原稿（help.md / help_jp.md）
 ├── python/prototype/     Phase 1 の Python/PyQt6 プロトタイプ（参照用）
 ├── document/             仕様・開発環境・バージョン情報
 ├── dist/binary/          ビルド成果物（Git 管理外）
 ├── dist/documents/       配布用 readme / history
-├── build_native.py       ネイティブビルド
-├── bundle_html.py        CSS/JS を 1 枚の HTML にインライン化
+├── build-tools/          build_native.py(ネイティブビルド) + bundle_html.py(CSS/JSを1枚のHTMLにインライン化)
 └── build.bat
 ```
 
 ## ドキュメント
 
-- 仕様書 → [document/spec.md](document/spec.md)
+- 仕様書 → [document/spec_jp.md](document/spec_jp.md)
 - 開発環境・ビルド手順 → [document/environment.md](document/environment.md)
 - バージョン情報 → [document/about.md](document/about.md)
-- English README → [README.md](README.md)
 
 ## コンセプト
 

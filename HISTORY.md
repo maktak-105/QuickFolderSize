@@ -8,8 +8,12 @@
 - Second digit: bug fixes
 - Third digit: other changes, such as documentation updates
 
-## Unreleased
+## v2.1.1 (2026-08-24)
 
+- Added a JSON report export ("File > Export Report (JSON)...") alongside the existing Markdown report, sharing the same schema as the new CLI output.
+- Added a CLI (`QuickFolderSize_cli.exe`) that scans a path and prints the result as JSON on stdout, for scripts and AI agents. It does not request administrator rights, so it never blocks on a UAC prompt; the NTFS MFT fast path is only used when the CLI happens to be run elevated.
+- Embedded the bundled UI HTML into the EXE as a resource. The EXE no longer reads `index.html` from disk at startup.
+- Removed the standalone `engine_x64.dll` from the distribution package (it was never loaded by the EXE; the scan engine has always been statically linked into it).
 - Added an NTFS volume-root MFT fast path for elevated scans.
 - The EXE now requests administrator rights at startup so the MFT path is the default.
 - Added automatic Win32 scanner fallback when MFT access is unavailable.

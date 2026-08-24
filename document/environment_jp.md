@@ -60,26 +60,25 @@ build.bat
 # → dist\binary\QuickFolderSize.exe
 ```
 
-`build.bat` は `python build_native.py` を呼ぶ薄いラッパー。EXE が起動中だとリンクに失敗する（`Permission denied`）。閉じてから再実行する。
+`build.bat` は `python build-tools\build_native.py` を呼ぶ薄いラッパー。EXE が起動中だとリンクに失敗する（`Permission denied`）。閉じてから再実行する。
 
 ### ビルド手順の内訳（`build_native.py`）
 
-1. `bundle_html.py` が `templates/index.html` + `static/css/style.css` + `static/js/app.js` を自己完結の `dist/binary/index.html` 1枚へバンドルする。CSS/JS はインライン化、相対パスの `<img>`（About の `static/img/author.png`）は data URI に埋め込む（`NavigateToString` は外部リソースを解決できない）
-2. `windres` でアプリアイコン（`core/native/QuickFolderSize.ico`）をリソースオブジェクト化
-3. `core/native/engine.cpp` を `-shared -static -std=c++17` でコンパイルし `engine_x64.dll` を生成（単体成果物。EXE 実行時にはロードしない）
-4. `engine.cpp` + `webview_main.cpp` + リソースを `-mwindows -static` でコンパイルし `QuickFolderSize.exe` を生成（engine は静的リンク）
-5. `WebView2Loader.dll` と開発用テンプレート一式（`templates/`、`static/css`、`static/js`）を `dist/binary/` へコピー
+1. `bundle_html.py` が `templates/index.html` + `static/css/style.css` + `static/js/app.js` を自己完結の `dist/binary/index.html` 1枚へバンドルする。CSS/JS はインライン化、相対パスの `<img>`（About の `static/img/author.png`）は data URI に埋め込む（`NavigateToString` は外部リソースを解決できない）。同じ内容を `core/native/index_embed.html` にもコピーする(次のリソースコンパイルで参照するため)
+2. `windres` で `core/native/QuickFolderSize.rc`(アプリアイコン・マニフェスト・`index_embed.html`のRCDATA埋め込み)、`core/native/QuickFolderSize_cli.rc`(アイコン・バージョン情報のみ、マニフェストなし)をそれぞれリソースオブジェクト化
+3. `engine.cpp` + `webview_main.cpp` + GUI用リソースを `-mwindows -static` でコンパイルし `QuickFolderSize.exe` を生成(engineは静的リンク、バンドルHTMLはRCDATAとして埋め込み済み)
+4. `engine.cpp` + `main_cli.cpp` + CLI用リソースを(`-mwindows`を付けず)`-static`でコンパイルし `QuickFolderSize_cli.exe` を生成(コンソールサブシステム、管理者マニフェストなし=既定でasInvoker)
+5. `WebView2Loader.dll` と開発用の `static/css`・`static/js` を `dist/binary/` へコピー
 
 ### ビルド成果物
 
 ```
 dist/
 ├── binary/                    # build.bat が生成（Git 管理外）
-│   ├── QuickFolderSize.exe    # メイン実行ファイル
-│   ├── engine_x64.dll         # スキャンエンジン DLL（単体成果物）
-│   ├── WebView2Loader.dll     # WebView2 ローダー
-│   ├── index.html             # バンドル済み自己完結 HTML（exe が読む）
-│   ├── templates/             # 開発用コピー（実行時は未使用）
+│   ├── QuickFolderSize.exe    # メイン実行ファイル（バンドルHTMLをRCDATA埋め込み済み）
+│   ├── QuickFolderSize_cli.exe # CLI版（管理者権限は要求しない、単体で動作）
+│   ├── WebView2Loader.dll     # WebView2 ローダー（GUI版に必須）
+│   ├── index.html             # バンドル済みHTMLの参考コピー（GUIはこれを読まない。配布必須ではない）
 │   └── static/                # 開発用コピー（実行時は未使用）
 └── documents/                 # 配布用ドキュメント（Git 管理）
     ├── readme.txt             # 英語
@@ -90,16 +89,15 @@ dist/
     └── LICENSE_jp.txt         # MIT 日本語参考訳
 ```
 
-> `QuickFolderSize.exe` は `WebView2Loader.dll` と `index.html` を自分と同じフォルダから探す。この3点は常に同じディレクトリに置く。
+> `QuickFolderSize.exe` はバンドルHTMLをRCDATAとして埋め込み済みで、`WebView2Loader.dll` だけを自分と同じフォルダから探す。この2点は常に同じディレクトリに置く。`QuickFolderSize_cli.exe` はどちらにも依存せず単体で動く。
 
 ### 配布 ZIP（フラット）
 
 Release 用 ZIP はサブフォルダを作らず、次を同じ階層に入れる。
 
 - `QuickFolderSize.exe`
-- `engine_x64.dll`
+- `QuickFolderSize_cli.exe`
 - `WebView2Loader.dll`
-- `index.html`
 - `readme.txt` / `readme_jp.txt`
 - `history.txt` / `history_jp.txt`
 - `LICENSE.txt` / `LICENSE_jp.txt`
@@ -127,36 +125,42 @@ CI / Release ランナーは Chocolatey の MinGW を使う。`WEBVIEW2_INCLUDE`
 
 Win32 API（`FindFirstFileW` / `FindNextFileW`, `DeviceIoControl` / NTFS MFT, `IFileDialog`, `DwmSetWindowAttribute` 等）と WebView2 SDK のみ。サードパーティの C++ ライブラリ依存なし。フロントエンドはバニラ JS。
 
-NTFS MFT 高速経路は、管理者権限で開いた `\\.\X:` ボリュームから `$MFT` のデータランを読み取る。EXEには`requireAdministrator`マニフェストを埋め込み、起動時にUAC確認を表示する。MFTレコードを安全に解釈できない場合、または対象がNTFSボリューム直下でない場合は、通常のWin32列挙にフォールバックする。
+NTFS MFT 高速経路は、管理者権限で開いた `\\.\X:` ボリュームから `$MFT` のデータランを読み取る。GUI版(`QuickFolderSize.exe`)には`requireAdministrator`マニフェストを埋め込み、起動時にUAC確認を表示する。MFTレコードを安全に解釈できない場合、または対象がNTFSボリューム直下でない場合は、通常のWin32列挙にフォールバックする。
+
+CLI版(`QuickFolderSize_cli.exe`)は管理者マニフェストを埋め込んでおらず、既定のasInvokerで起動する(UACを要求しない)。非管理者実行時は上記のフォールバックにより自動的にWin32列挙が使われ、MFT高速経路は管理者権限で実行した場合のみ有効になる。
 
 ## ファイル構成
 
 ```
 QuickFolderSize/
 ├── core/native/
-│   ├── engine.h / engine.cpp     スキャンエンジン
-│   ├── webview_main.cpp          WebView2ホスト・WebMessage・ダイアログ
-│   ├── QuickFolderSize.rc / .ico アイコン
+│   ├── engine.h / engine.cpp          スキャンエンジン（GUI/CLI共有）
+│   ├── webview_main.cpp               WebView2ホスト・WebMessage・ダイアログ（GUI用）
+│   ├── main_cli.cpp                   CLI版エントリーポイント
+│   ├── QuickFolderSize.rc / .ico / .manifest  GUI用リソース
+│   ├── QuickFolderSize_cli.rc         CLI用リソース（マニフェストなし）
+│   └── index_embed.html               ビルド時生成（Git管理外）。GUIへRCDATA埋め込み
 ├── templates/index.html          開発用 HTML
 ├── static/
 │   ├── css/style.css
 │   ├── js/app.js
 │   └── img/author.png            About ダイアログ用（バンドル時に埋め込み）
+├── resources/
+│   ├── icons/QuickFolderSize.ico  アイコンの正本(core/native側はwindres参照用に別途コピーを保持)
+│   └── help/help.md / help_jp.md  操作説明書
 ├── assets/                       README 用スクリーンショット
 ├── python/prototype/             Phase 1 プロトタイプ（参照用）
 ├── document/
-│   ├── spec.md
-│   ├── environment.md            本ファイル
-│   └── about.md
+│   ├── spec.md / spec_jp.md
+│   ├── environment.md / environment_jp.md  本ファイル
+│   └── about.md / about_jp.md
 ├── dist/
 │   ├── binary/                   ビルド成果物（Git 管理外）
 │   └── documents/                配布 readme / history / LICENSE
 ├── .github/workflows/            CI と Release
 ├── LICENSE                       リポジトリ用 MIT（英語原文）
 ├── README.md / README_jp.md
-├── build_native.py
-├── bundle_html.py
+├── build-tools/                   build_native.py / bundle_html.py
 ├── build.bat
-├── .gitignore
-└── CLAUDE.md
+└── .gitignore
 ```

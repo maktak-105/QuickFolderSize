@@ -1,7 +1,7 @@
 @echo off
 echo === QuickFolderSize Native Build ===
 
-python build_native.py
+python build-tools\build_native.py
 if errorlevel 1 (
     echo ERROR: build_native.py failed
     exit /b 1

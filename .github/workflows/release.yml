@@ -37,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          python build_native.py
+          python build-tools/build_native.py
           if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
 
       - name: Package distribution files
@@ -45,9 +45,8 @@ jobs:
         run: |
           $files = @(
             'dist/binary/QuickFolderSize.exe',
-            'dist/binary/engine_x64.dll',
+            'dist/binary/QuickFolderSize_cli.exe',
             'dist/binary/WebView2Loader.dll',
-            'dist/binary/index.html',
             'dist/documents/readme.txt',
             'dist/documents/readme_jp.txt',
             'dist/documents/history.txt',
@@ -78,5 +77,5 @@ jobs:
 
             Download `QuickFolderSize-binary.zip`, extract every file into the same folder, and run `QuickFolderSize.exe`.
 
-            Keep `QuickFolderSize.exe`, `WebView2Loader.dll`, and `index.html` together.
+            Keep `QuickFolderSize.exe` and `WebView2Loader.dll` together (the UI is embedded in the EXE). `QuickFolderSize_cli.exe` is an optional standalone command-line build for scripts and AI agents — see the CLI section in README.md.
             Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server PCs, install Microsoft Edge WebView2 Runtime (Evergreen).
