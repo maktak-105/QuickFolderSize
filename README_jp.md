@@ -6,7 +6,7 @@
 
 ローカルドライブ・フォルダの使用容量を視覚的に把握するための Windows デスクトップアプリです。パスをスキャンし、割合バー付きのソート可能なツリーで結果を表示し、Markdown レポートを出力できます。
 
-バージョン: **v2.1.1**
+バージョン: **v3.0.0**
 
 実装: **C++17（MinGW-w64 / g++）+ WebView2**。UI はネイティブの WebView2 ウィンドウ上の HTML / CSS / バニラ JS です。配布アプリに Python や Qt のランタイムは含まれません。
 
@@ -24,6 +24,8 @@ ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行しま�
 - `QuickFolderSize_cli.exe` — 任意のCLI版。[CLI](#cli)を参照
 - `WebView2Loader.dll` — WebView2 ローダー(`QuickFolderSize.exe`に必須)
 - `readme.txt` / `readme_jp.txt` — 使い方
+- `mcp-server/` — 任意のMCPサーバー(Node.jsソース、Node.jsと初回の`npm install`が必要)。[MCP サーバー](#mcp-サーバー)を参照
+- `mcp_readme.txt` / `mcp_readme_jp.txt` — MCPサーバーの説明書
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
 Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 / LTSC / Server では Evergreen Runtime の追加インストールが必要です。
@@ -49,6 +51,7 @@ Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 
 - フォルダ容量レポート。Markdown または JSON で出力(スキーマは[CLI](#cli)と共通)
 - 日本語 ⇔ English（メニューバー右端）。メニュー・ヘッダー・ダイアログ・レポートが即時切替
 - 任意のCLI版(`QuickFolderSize_cli.exe`)。スキャン結果をJSONで標準出力し、スクリプト・AIエージェント向け。[CLI](#cli)を参照
+- 任意のMCPサーバー(`mcp-server/`)。Claude CodeのようなAIエージェントがHTTP経由でスキャンを呼び出せる。[MCP サーバー](#mcp-サーバー)を参照
 
 ## UI
 
@@ -134,6 +137,20 @@ QuickFolderSize_cli.exe <path> [--pretty] [--version]
 
 配布パッケージ向けの説明: [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt)（日本語）、[`dist/documents/readme.txt`](dist/documents/readme.txt)（英語）。
 
+## MCP サーバー
+
+`mcp-server/` は `QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するNode.js製サイドカーです。Claude CodeのようなAIエージェントが、GUIを開かずスキャン結果を直接取得できます。配布ZIPに同梱されていますが、GUI/CLIと違い自己完結の実行ファイルではなくNode.jsソースなので、利用にはNode.jsのインストールが別途必要です。
+
+```
+cd mcp-server
+npm install          # 初回のみ
+mcp-server\start-admin.bat
+```
+
+**管理者権限での起動が必須です。** 非管理者だとCLIがMFT高速経路を使えず低速なWin32列挙にフォールバックし、巨大フォルダのスキャンでシステムに負荷がかかります。起動後は `http://127.0.0.1:39391/mcp` で待ち受けます。
+
+提供ツール: `server_status`(疎通確認)、`scan_folder`(同期スキャン)、`start_scan`/`get_scan_result`(非同期スキャン、大きいフォルダ向け)。詳細・運用上の注意(Claude側ツール呼び出しのタイムアウト回避策など)は [`mcp-server/README.md`](mcp-server/README.md) を参照してください。
+
 ## ソースからビルド
 
 ```powershell
@@ -181,6 +198,7 @@ QuickFolderSize/
 ├── dist/binary/          ビルド成果物（Git 管理外）
 ├── dist/documents/       配布用 readme / history
 ├── build-tools/          build_native.py(ネイティブビルド) + bundle_html.py(CSS/JSを1枚のHTMLにインライン化)
+├── mcp-server/           CLIをHTTP MCPツールとして公開するNode.jsサイドカー([README](mcp-server/README.md))
 └── build.bat
 ```
 

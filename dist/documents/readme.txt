@@ -1,5 +1,5 @@
 QuickFolderSize - Folder Size Viewer
-Distribution package  v2.1.1
+Distribution package  v3.0.0
 
 GitHub
 ------
@@ -35,6 +35,9 @@ Optional:
 - QuickFolderSize_cli.exe   Command-line build. See "Command-line
   version" below. Not required for the GUI app; it has no
   dependencies of its own.
+- mcp-server\               MCP server for AI agents (Claude Code, etc.).
+  Requires Node.js and a one-time "npm install". See mcp_readme.txt.
+- mcp_readme.txt / mcp_readme_jp.txt   MCP server documentation.
 
 Do not move QuickFolderSize.exe away from WebView2Loader.dll.
 The EXE looks for it in its own folder.

@@ -8,6 +8,13 @@
 - Second digit: bug fixes
 - Third digit: other changes, such as documentation updates
 
+## v3.0.0 (2026-09-14)
+
+- Added `mcp-server/`, exposing `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool so AI agents like Claude Code can pull scan results without opening the GUI.
+- Tools: `server_status` (connectivity check), `scan_folder` (synchronous scan), `start_scan`/`get_scan_result` (async scan, for large folders).
+- Observed `scan_folder` failing with a `session expired` error on large folders due to an undocumented MCP-client-side tool-call timeout (shorter than the server's 5-minute timeout); worked around it with the `start_scan`/`get_scan_result` async pattern.
+- Details: [`mcp-server/README.md`](mcp-server/README.md), [document/spec.md](document/spec.md) section 10.
+
 ## v2.1.1 (2026-08-24)
 
 - Added a JSON report export ("File > Export Report (JSON)...") alongside the existing Markdown report, sharing the same schema as the new CLI output.

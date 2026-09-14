@@ -12,7 +12,7 @@
 
 #include "engine.h"
 
-#define APP_VERSION L"2.1.1"
+#define APP_VERSION L"3.0.0"
 
 // ===== JSON ヘルパー(webview_main.cpp と同一ロジックの自己完結コピー) =====
 

@@ -6,7 +6,7 @@
 
 Windows desktop app that shows how much space folders and files use on local drives. Scan a path, browse the result as a sortable tree with ratio bars, and export a Markdown report.
 
-Version: **v2.1.1**
+Version: **v3.0.0**
 
 Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanilla JS hosted in a native WebView2 window. There is no Python or Qt runtime in the shipped app.
 
@@ -24,6 +24,8 @@ Extract every file into the same folder and run `QuickFolderSize.exe`.
 - `QuickFolderSize_cli.exe` — optional CLI build; see [CLI](#cli) below
 - `WebView2Loader.dll` — WebView2 loader (required by `QuickFolderSize.exe`)
 - `readme.txt` / `readme_jp.txt` — usage notes
+- `mcp-server/` — optional MCP server (Node.js source; requires Node.js and a one-time `npm install`); see [MCP Server](#mcp-server)
+- `mcp_readme.txt` / `mcp_readme_jp.txt` — MCP server docs
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
 Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server machines, install Microsoft Edge WebView2 Runtime (Evergreen).
@@ -49,6 +51,7 @@ Updates go through pull requests to `main`. Pushing a `v*` tag (or running the R
 - Folder-size report, exported as Markdown or JSON (same schema as the [CLI](#cli))
 - Japanese / English toggle (menu bar, top right). Menus, headers, dialogs, and reports switch immediately
 - Optional CLI build (`QuickFolderSize_cli.exe`) that prints scan results as JSON for scripts and AI agents — see [CLI](#cli)
+- Optional MCP server (`mcp-server/`) that lets AI agents like Claude Code call scans over HTTP — see [MCP Server](#mcp-server)
 
 ## UI
 
@@ -134,6 +137,20 @@ QuickFolderSize_cli.exe <path> [--pretty] [--version]
 
 Distribution notes for end users: [`dist/documents/readme.txt`](dist/documents/readme.txt) (English) and [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt) (Japanese).
 
+## MCP Server
+
+`mcp-server/` is a Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool, so AI agents like Claude Code can pull scan results directly without opening the GUI. It ships inside the release ZIP, but unlike the GUI/CLI it isn't a self-contained executable — it's Node.js source, so you need Node.js installed to use it.
+
+```
+cd mcp-server
+npm install          # once
+mcp-server\start-admin.bat
+```
+
+**Must run elevated.** Without administrator rights the CLI can't use the MFT fast path and falls back to the slow Win32 walk, which puts real load on the system for large folders. Once started, it listens on `http://127.0.0.1:39391/mcp`.
+
+Tools exposed: `server_status` (connectivity check), `scan_folder` (synchronous scan), `start_scan`/`get_scan_result` (async scan, for large folders). See [`mcp-server/README.md`](mcp-server/README.md) for details and operational notes (including a workaround for tool-call timeouts on the Claude Code side).
+
 ## Build from source
 
 ```powershell
@@ -181,6 +198,7 @@ QuickFolderSize/
 ├── dist/binary/          Build output (not in git)
 ├── dist/documents/       Packaged readme / history
 ├── build-tools/          build_native.py (native build) + bundle_html.py (inlines CSS/JS into one HTML file)
+├── mcp-server/           Node.js sidecar exposing the CLI as an HTTP MCP tool ([README](mcp-server/README.md))
 └── build.bat
 ```
 

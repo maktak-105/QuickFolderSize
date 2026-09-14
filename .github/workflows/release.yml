@@ -51,6 +51,8 @@ jobs:
             'dist/documents/readme_jp.txt',
             'dist/documents/history.txt',
             'dist/documents/history_jp.txt',
+            'dist/documents/mcp_readme.txt',
+            'dist/documents/mcp_readme_jp.txt',
             'dist/documents/LICENSE.txt',
             'dist/documents/LICENSE_jp.txt'
           )
@@ -62,6 +64,15 @@ jobs:
           foreach ($file in $files) {
             Copy-Item -LiteralPath $file -Destination $staging -Force
           }
+
+          # mcp-server/: ship the source (optional companion tool for AI agents), minus
+          # node_modules (end users run `npm install`; see mcp_readme.txt) and scan-reports
+          # (transient scan output from a dev machine, must never ship in a release).
+          $mcpDest = Join-Path $staging 'mcp-server'
+          New-Item -ItemType Directory -Path $mcpDest -Force | Out-Null
+          Get-ChildItem -LiteralPath 'mcp-server' -Exclude 'node_modules', 'scan-reports' |
+            Copy-Item -Destination $mcpDest -Recurse -Force
+
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'QuickFolderSize-binary.zip') -Force
 
       - name: Upload release asset
@@ -79,3 +90,5 @@ jobs:
 
             Keep `QuickFolderSize.exe` and `WebView2Loader.dll` together (the UI is embedded in the EXE). `QuickFolderSize_cli.exe` is an optional standalone command-line build for scripts and AI agents — see the CLI section in README.md.
             Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server PCs, install Microsoft Edge WebView2 Runtime (Evergreen).
+
+            Also included: `mcp-server/`, an optional MCP server for AI agents like Claude Code (requires Node.js; run `npm install` once before starting it). See `mcp_readme.txt`.
