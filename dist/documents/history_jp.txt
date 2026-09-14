@@ -1,5 +1,8 @@
 QuickFolderSize - 更新履歴
 
+v3.0.0 (2026-09-14)
+- MCP(Model Context Protocol)サーバー(mcp-server/、任意機能、本パッケージに同梱)を追加。Claude CodeのようなAIエージェントがGUIを開かずHTTP経由でスキャン結果を取得できます。Node.jsと初回の`npm install`が必要。詳細はmcp_readme_jp.txtを参照
+
 v2.1.1 (2026-08-24)
 - 既存のMarkdownレポートに加え、JSONレポート出力(ファイル > レポート作成(JSON)...)を追加。CLI版の出力と同じスキーマ
 - スキャン結果をJSONで標準出力するCLI版(QuickFolderSize_cli.exe)を追加。スクリプト・AIエージェント向け。管理者権限を要求しないためUACで止まらない(管理者権限で実行した場合のみMFT高速経路を使用)

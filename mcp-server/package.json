@@ -1,0 +1,18 @@
+{
+  "name": "quickfoldersize-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server wrapping QuickFolderSize_cli.exe. Run elevated to use the NTFS MFT fast-path.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.2.1",
+    "zod": "^4.6.5"
+  }
+}

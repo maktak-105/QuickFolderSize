@@ -1,5 +1,5 @@
 QuickFolderSize - フォルダ使用容量ビューワー
-配布パッケージ  v2.1.1
+配布パッケージ  v3.0.0
 
 GitHub
 ------
@@ -34,6 +34,10 @@ QuickFolderSize は、ローカルのフォルダやドライブをスキャン�
 任意:
 - QuickFolderSize_cli.exe   コマンドライン版。「コマンドライン版」の
   節を参照。GUI本体の動作には不要で、依存ファイルもありません。
+- mcp-server\               AIエージェント(Claude Code等)向けMCP
+  サーバー。Node.jsと初回の"npm install"が必要です。
+  mcp_readme_jp.txt を参照してください。
+- mcp_readme.txt / mcp_readme_jp.txt   MCPサーバーの説明書。
 
 QuickFolderSize.exe を WebView2Loader.dll から
 離して置かないでください。EXE は自分と同じフォルダから探します。

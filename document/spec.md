@@ -4,7 +4,7 @@
 
 | Item | Details |
 |:-----|:-----|
-| Version | v2.1.1 |
+| Version | v3.0.0 |
 | Purpose | Visualize how much space local drives and folders use |
 | Target OS | Windows 10 / 11 (64-bit) |
 | Implementation | C++17 (MinGW-w64 / g++) + WebView2 (HTML/CSS/JS) |
@@ -253,7 +253,27 @@ Report content (both Markdown and JSON) is built natively from the already-in-me
 
 ---
 
-## 10. Planned
+## 10. MCP server (`mcp-server/`)
+
+A Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool. It's a separate process from the main C++/WebView2 app (its own `package.json` has an independent npm package version), but the feature addition is what bumped the overall project to v3.0.0. Added so AI agents like Claude Code can pull scan results without opening the GUI.
+
+- **Stack**: `express` + `@modelcontextprotocol/sdk`'s `StreamableHTTPServerTransport` (stateless, `sessionIdGenerator: undefined`). Listens on `http://127.0.0.1:39391/mcp` (port configurable via `QFS_MCP_PORT`). Each request spawns `QuickFolderSize_cli.exe` as a child process and returns its stdout JSON, either verbatim or summarized.
+- **Administrator rights**: meant to be started via `start-admin.bat`/`start-admin.ps1`. Elevation is detected by whether `fs.accessSync('C:\Windows\System32\config\SAM', ...)` succeeds. Running elevated lets the CLI use the MFT fast path; scanning a large folder through a non-elevated server falls back to the slow Win32 walk and puts real load on the system.
+- **Tools exposed**:
+
+  | Tool | Description |
+  |:-----|:-----|
+  | `server_status` | Returns whether the server process is elevated |
+  | `scan_folder(path, pretty?)` | Synchronous scan — returns the CLI's stdout JSON verbatim in a single response |
+  | `start_scan(path, pretty?)` | Starts an async scan and returns a `scanId` immediately (job state kept in an in-process `Map`) |
+  | `get_scan_result(scanId)` | Polls a `start_scan` job. On completion, returns a lightweight summary (`path`, `scanned_at`, `total_size`, `subfolder_count`, `file_count_recursive`, `top_level_children`) plus the full tree's location on disk (`scan-reports/<scanId>.json`) |
+
+- **Why `start_scan`/`get_scan_result` exist**: the MCP client (Claude Code) applies its own undocumented wait timeout to a tool call, well short of the server's 5-minute timeout. Scanning a large folder (tens of thousands of files) through `scan_folder` can take long enough that the client reports a `session expired` error even though the server answered normally. The async pattern keeps each individual tool call short enough to avoid that.
+- **Operational notes**: see [`mcp-server/README.md`](../mcp-server/README.md). To sidestep the Claude Code tool-call timeout entirely, you can also curl `http://127.0.0.1:39391/mcp` directly from a Bash tool call (the response is SSE-formatted; parse it with Node.js).
+
+---
+
+## 11. Planned
 
 | Idea | Description |
 |:---|:-----|

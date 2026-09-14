@@ -8,6 +8,13 @@
 - 2桁目の更新：バグ修正
 - 3桁目の更新：その他の変更（ドキュメント修正など）
 
+## v3.0.0（2026-09-14）
+
+- `mcp-server/`を追加。`QuickFolderSize_cli.exe`をHTTP経由のMCP(Model Context Protocol)ツールとして公開し、Claude CodeのようなAIエージェントからGUI不要でスキャン結果を取得できるようにした。
+- ツール: `server_status`(疎通確認)、`scan_folder`(同期スキャン)、`start_scan`/`get_scan_result`(非同期スキャン、大きいフォルダ向け)。
+- MCPクライアント側のツール呼び出しタイムアウト(サーバー側5分より短い、未文書化)により、大きいフォルダで`scan_folder`が`session expired`エラーになる事象を確認、`start_scan`/`get_scan_result`の非同期パターンで回避する構成にした。
+- 詳細は[`mcp-server/README.md`](mcp-server/README.md)、[document/spec_jp.md](document/spec_jp.md)10節を参照。
+
 ## v2.1.1（2026-08-24）
 
 - 既存のMarkdownレポートに加え、JSONレポート出力(「ファイル > レポート作成(JSON)...」)を追加。CLI版の出力と同じスキーマ。

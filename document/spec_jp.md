@@ -4,7 +4,7 @@
 
 | 項目 | 内容 |
 |:-----|:-----|
-| バージョン | v2.1.1 |
+| バージョン | v3.0.0 |
 | 目的 | ローカルドライブ・フォルダの使用容量を視覚的に把握する |
 | 対象OS | Windows 10 / 11 (64bit) |
 | 実装言語 | C++17（MinGW-w64 / g++）+ WebView2（HTML/CSS/JS） |
@@ -249,7 +249,27 @@ MFT高速経路はNTFSのFILEレコードを直接読むため、EXE起動時に
 
 ---
 
-## 10. 今後の実装予定
+## 10. MCPサーバー(`mcp-server/`)
+
+`QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するNode.js製サイドカー。本体アプリ(C++/WebView2)とは別プロセスで、独自の`package.json`でnpmパッケージとしてのバージョンは別管理だが、この機能追加自体がプロジェクト全体をv3.0.0へ引き上げた要因。Claude CodeのようなAIエージェントが、GUIを開かずスキャン結果を取得できるようにする目的で追加した。
+
+- **構成**: `express` + `@modelcontextprotocol/sdk` の `StreamableHTTPServerTransport`(ステートレス、`sessionIdGenerator: undefined`)。`http://127.0.0.1:39391/mcp` で待ち受け(ポートは`QFS_MCP_PORT`環境変数で変更可)。リクエストごとに`QuickFolderSize_cli.exe`を子プロセスとしてspawnし、標準出力のJSONをそのまま(または要約して)返す
+- **管理者権限**: `start-admin.bat`/`start-admin.ps1`で起動する前提。`fs.accessSync('C:\Windows\System32\config\SAM', ...)`が成功するかでelevation判定する。管理者権限で起動すればCLIがMFT高速経路を使える。非管理者起動時にCLIへ巨大フォルダを投げると低速なWin32列挙になり、システム負荷が高くなる
+- **提供ツール**:
+
+  | ツール | 説明 |
+  |:-------|:-----|
+  | `server_status` | サーバープロセスの昇格状態を返す |
+  | `scan_folder(path, pretty?)` | 同期スキャン。CLIの標準出力JSONをそのまま1回のレスポンスで返す |
+  | `start_scan(path, pretty?)` | 非同期スキャンを開始し、即座に`scanId`を返す(サーバー内の`Map`でジョブ状態を保持) |
+  | `get_scan_result(scanId)` | `start_scan`のポーリング。完了時は`{path, scanned_at, total_size, subfolder_count, file_count_recursive, top_level_children}`の軽量要約と、フルツリーの保存先(`scan-reports/<scanId>.json`)を返す |
+
+- **`start_scan`/`get_scan_result`を追加した理由**: MCPクライアント(Claude Code)側のツール呼び出しには、サーバー側タイムアウト(5分)よりずっと短い、明示されていない待機タイムアウトがある。`scan_folder`の処理に数十秒以上かかる大きいフォルダ(数万ファイル規模)を対象にすると、サーバーは正常応答しているにもかかわらずクライアント側で`session expired`エラーになることを確認した。非同期パターンでツール呼び出し1回あたりの待機時間を短く保つことで回避する
+- **運用上の注意**: 詳細は[`mcp-server/README.md`](../mcp-server/README.md)を参照。Claude Code側のツール呼び出しタイムアウトを完全に避けたい場合は、Bashツールから`http://127.0.0.1:39391/mcp`へ直接curlで叩く方法もある(SSE形式のレスポンスをNode.jsでパースする)
+
+---
+
+## 11. 今後の実装予定
 
 | 案 | 内容 |
 |:---|:-----|
