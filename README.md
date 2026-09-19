@@ -15,8 +15,8 @@ Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanil
 If you only want to run the app, download the ZIP from GitHub Releases.
 
 - [Latest releases](https://github.com/maktak-105/QuickFolderSize/releases)
-- [v2.0.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v2.0.1)
-- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v2.0.1/QuickFolderSize-binary.zip)
+- [v3.0.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.0.0)
+- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.0.0/QuickFolderSize-binary.zip)
 
 Extract every file into the same folder and run `QuickFolderSize.exe`.
 
@@ -27,6 +27,14 @@ Extract every file into the same folder and run `QuickFolderSize.exe`.
 - `mcp-server/` — optional MCP server (Node.js source; requires Node.js and a one-time `npm install`); see [MCP Server](#mcp-server)
 - `mcp_readme.txt` / `mcp_readme_jp.txt` — MCP server docs
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
+
+### Integrity verification (SHA-256)
+
+Official SHA-256 checksums for the distribution ZIP and binaries are automatically computed during the CI (GitHub Actions) build and published as `SHA256SUMS.txt` on each release page. Verify the downloaded package with PowerShell:
+
+```powershell
+Get-FileHash .\QuickFolderSize-binary.zip -Algorithm SHA256
+```
 
 Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server machines, install Microsoft Edge WebView2 Runtime (Evergreen).
 
@@ -159,13 +167,13 @@ winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
 #   include\WebView2.h  and  x64\WebView2Loader.dll
 
 cd QuickFolderSize
-build.bat
-# → dist\binary\QuickFolderSize.exe
+scripts\build.bat
+# → dist\QuickFolderSize.exe
 ```
 
-`build.bat` runs `python build-tools\build_native.py`. That script finds WinLibs `g++`, bundles the HTML (embedding it into the GUI as an RCDATA resource), compiles the GUI EXE (`-mwindows`, engine statically linked) and the CLI EXE (console subsystem, no administrator manifest), and copies `WebView2Loader.dll`.
+`scripts\build.bat` runs `python scripts\build.py`. That script finds WinLibs `g++`, bundles the HTML (embedding it into the GUI as an RCDATA resource), compiles the GUI EXE (`-mwindows`, engine statically linked) and the CLI EXE (console subsystem, no administrator manifest), and copies `WebView2Loader.dll`.
 
-Details: [`document/environment.md`](document/environment.md).
+Details: [`docs/environment.md`](docs/environment.md).
 
 ## Keyboard shortcuts
 
@@ -189,24 +197,26 @@ No third-party C++ libraries. The frontend is vanilla JS.
 
 ```
 QuickFolderSize/
-├── core/native/          Scan engine + WebView2 host + CLI entry point (C++)
-├── templates/            Dev HTML
-├── static/css|js         Dev CSS / JS
+├── src/
+│   ├── app/              GUI host & Windows resources (main_gui.cpp, .rc, .ico, .manifest)
+│   ├── cli/              CLI entry point & CLI resource (main_cli.cpp, .rc)
+│   ├── engine/           Folder scanning & MFT engine (engine.cpp, engine.h)
+│   └── ui/               UI source files (index.html, css/, js/, img/)
+├── proto/prototype/      Phase 1 Python/PyQt6 prototype (reference only)
+├── scripts/              build.py (build script), build.bat, bundle_html.py
 ├── resources/help/       In-app help / operation manual source (help.md / help_jp.md)
-├── python/prototype/     Phase 1 Python/PyQt6 prototype (reference only)
-├── document/             Spec, environment, about
-├── dist/binary/          Build output (not in git)
-├── dist/documents/       Packaged readme / history
-├── build-tools/          build_native.py (native build) + bundle_html.py (inlines CSS/JS into one HTML file)
+├── docs/                 Spec, environment, about
+│   └── distribution/     Packaged readme / history / LICENSE
+├── dist/                 Flat build output (not in git except .gitkeep)
 ├── mcp-server/           Node.js sidecar exposing the CLI as an HTTP MCP tool ([README](mcp-server/README.md))
-└── build.bat
+└── .github/workflows/    CI and release workflows
 ```
 
 ## Docs
 
-- Spec → [document/spec.md](document/spec.md)
-- Build environment → [document/environment.md](document/environment.md)
-- About / version → [document/about.md](document/about.md)
+- Spec → [docs/spec.md](docs/spec.md)
+- Build environment → [docs/environment.md](docs/environment.md)
+- About / version → [docs/about.md](docs/about.md)
 
 ## Concept
 

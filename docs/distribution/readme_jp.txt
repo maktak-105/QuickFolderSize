@@ -39,6 +39,13 @@ QuickFolderSize は、ローカルのフォルダやドライブをスキャン�
   mcp_readme_jp.txt を参照してください。
 - mcp_readme.txt / mcp_readme_jp.txt   MCPサーバーの説明書。
 
+完全性検証（SHA-256）
+---------------------
+配布用ZIPおよびバイナリの公式SHA-256ハッシュ値はCIビルド時に自動計算され、
+GitHub Releasesの各リリースに SHA256SUMS.txt として添付・公開されています。
+PowerShellでダウンロードファイルの整合性を確認できます:
+  Get-FileHash .\QuickFolderSize-binary.zip -Algorithm SHA256
+
 QuickFolderSize.exe を WebView2Loader.dll から
 離して置かないでください。EXE は自分と同じフォルダから探します。
 

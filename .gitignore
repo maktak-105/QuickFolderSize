@@ -1,20 +1,24 @@
-# Phase 1 (Python) PyInstaller
+# Build output & intermediate files
 build/
+dist/*
+!dist/.gitkeep
 dist_tmp/
 __pycache__/
-*.pyc
-
-# dist/binary: C++/WebView2版ビルド成果物はGit管理外、フォルダ構造だけ管理
-dist/binary/*
-!dist/binary/.gitkeep
-dist/*.zip
-
-# dist/documents: 配布用ドキュメント（readme / history / LICENSE）はGit管理する
-
-# core/native: build_native.py が生成する中間ファイル
-core/native/*.dll
-core/native/*.o
-core/native/*_debug.log
-core/native/index_embed.html
-.venv/
 *.py[cod]
+*.o
+*.exe
+*.dll
+*.log
+
+# Environment & IDE
+.venv/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Test tooling & reports
+proto/tests/reports/
+.pytest_cache/
+.coverage
+htmlcov/

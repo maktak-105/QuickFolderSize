@@ -15,8 +15,8 @@
 ソースをビルドしなくてよい場合は、GitHub Releases から ZIP をダウンロードしてください。
 
 - [最新の Release](https://github.com/maktak-105/QuickFolderSize/releases)
-- [v2.0.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v2.0.1)
-- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v2.0.1/QuickFolderSize-binary.zip)
+- [v3.0.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.0.0)
+- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.0.0/QuickFolderSize-binary.zip)
 
 ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行します。
 
@@ -27,6 +27,14 @@ ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行しま�
 - `mcp-server/` — 任意のMCPサーバー(Node.jsソース、Node.jsと初回の`npm install`が必要)。[MCP サーバー](#mcp-サーバー)を参照
 - `mcp_readme.txt` / `mcp_readme_jp.txt` — MCPサーバーの説明書
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
+
+### 完全性検証 (SHA-256)
+
+配布用 ZIP および各バイナリの公式 SHA-256 ハッシュ値は、CI (GitHub Actions) ビルド時に自動計算され、各リリースページに `SHA256SUMS.txt` として添付・公開されています。PowerShell でダウンロードファイルの完全性を確認できます:
+
+```powershell
+Get-FileHash .\QuickFolderSize-binary.zip -Algorithm SHA256
+```
 
 Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 / LTSC / Server では Evergreen Runtime の追加インストールが必要です。
 
@@ -151,21 +159,21 @@ mcp-server\start-admin.bat
 
 提供ツール: `server_status`(疎通確認)、`scan_folder`(同期スキャン)、`start_scan`/`get_scan_result`(非同期スキャン、大きいフォルダ向け)。詳細・運用上の注意(Claude側ツール呼び出しのタイムアウト回避策など)は [`mcp-server/README.md`](mcp-server/README.md) を参照してください。
 
-## ソースからビルド
-
+### ソースからのビルド
+ 
 ```powershell
 winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
 # WebView2 SDK のヘッダ / ローダーを C:\tools\webview2\build\native\ に配置
 #   include\WebView2.h  と  x64\WebView2Loader.dll
 
 cd QuickFolderSize
-build.bat
-# → dist\binary\QuickFolderSize.exe
+scripts\build.bat
+# → dist\QuickFolderSize.exe
 ```
 
-`build.bat` は `python build-tools\build_native.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドル(GUIへRCDATAとして埋め込み)し、GUI EXE（`-mwindows`、エンジンは静的リンク）とCLI EXE(コンソールサブシステム、管理者マニフェストなし)をコンパイルし、`WebView2Loader.dll` をコピーします。
+`scripts\build.bat` は `python scripts\build.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドル(GUIへRCDATAとして埋め込み)し、GUI EXE（`-mwindows`、エンジンは静的リンク）とCLI EXE(コンソールサブシステム、管理者マニフェストなし)をコンパイルし、`WebView2Loader.dll` をコピーします。
 
-詳細は [`document/environment.md`](document/environment.md)。
+詳細は [`docs/environment.md`](docs/environment.md)。
 
 ## キーボードショートカット
 
@@ -189,24 +197,26 @@ build.bat
 
 ```
 QuickFolderSize/
-├── core/native/          スキャンエンジン + WebView2 ホスト + CLIエントリーポイント（C++）
-├── templates/            開発用 HTML
-├── static/css|js         開発用 CSS / JS
+├── src/
+│   ├── app/              GUIホスト & Windowsリソース（main_gui.cpp, .rc, .ico, .manifest）
+│   ├── cli/              CLIエントリーポイント & CLIリソース（main_cli.cpp, .rc）
+│   ├── engine/           フォルダスキャン & MFTエンジン（engine.cpp, engine.h）
+│   └── ui/               UIソース（index.html, css/, js/, img/）
+├── proto/prototype/      Phase 1 の Python/PyQt6 プロトタイプ（参照用）
+├── scripts/              build.py（ビルドスクリプト）, build.bat, bundle_html.py
 ├── resources/help/       アプリ内ヘルプ・操作説明書の原稿（help.md / help_jp.md）
-├── python/prototype/     Phase 1 の Python/PyQt6 プロトタイプ（参照用）
-├── document/             仕様・開発環境・バージョン情報
-├── dist/binary/          ビルド成果物（Git 管理外）
-├── dist/documents/       配布用 readme / history
-├── build-tools/          build_native.py(ネイティブビルド) + bundle_html.py(CSS/JSを1枚のHTMLにインライン化)
+├── docs/                 仕様・開発環境・バージョン情報
+│   └── distribution/     配布用 readme / history / LICENSE
+├── dist/                 フラットなビルド成果物（Git 管理外、.gitkeepのみ保持）
 ├── mcp-server/           CLIをHTTP MCPツールとして公開するNode.jsサイドカー([README](mcp-server/README.md))
-└── build.bat
+└── .github/workflows/    CI / Release ワークフロー
 ```
 
 ## ドキュメント
 
-- 仕様書 → [document/spec_jp.md](document/spec_jp.md)
-- 開発環境・ビルド手順 → [document/environment.md](document/environment.md)
-- バージョン情報 → [document/about.md](document/about.md)
+- 仕様書 → [docs/spec_jp.md](docs/spec_jp.md)
+- 開発環境・ビルド手順 → [docs/environment.md](docs/environment.md)
+- バージョン情報 → [docs/about.md](docs/about.md)
 
 ## コンセプト
 
