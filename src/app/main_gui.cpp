@@ -752,7 +752,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 // バンドル済みindex.htmlはQuickFolderSize.rcでRCDATAとしてEXEに埋め込まれている
-// (ビルド時にbundle_html.pyがcore/native/index_embed.htmlへ書き出したもの)。
+// (ビルド時にbundle_html.pyがsrc/app/index_embed.htmlへ書き出したもの)。
 // ディスクからは読まない。
 std::wstring LoadEmbeddedIndexHtml() {
     HRSRC hRes = FindResourceW(NULL, MAKEINTRESOURCEW(IDR_INDEX_HTML), (LPCWSTR)RT_RCDATA);

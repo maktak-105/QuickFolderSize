@@ -16,12 +16,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "maktak-105"
       VALUE "FileDescription", "QuickFolderSize"
-      VALUE "FileVersion", "3.0.0.0"
+      VALUE "FileVersion", "3.1.0.0"
       VALUE "InternalName", "QuickFolderSize"
       VALUE "LegalCopyright", "MIT License"
       VALUE "OriginalFilename", "QuickFolderSize.exe"
       VALUE "ProductName", "QuickFolderSize"
-      VALUE "ProductVersion", "3.0.0.0"
+      VALUE "ProductVersion", "3.1.0.0"
     END
   END
   BLOCK "VarFileInfo"

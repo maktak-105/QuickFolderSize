@@ -6,7 +6,7 @@
 
 ローカルドライブ・フォルダの使用容量を視覚的に把握するための Windows デスクトップアプリです。パスをスキャンし、割合バー付きのソート可能なツリーで結果を表示し、Markdown レポートを出力できます。
 
-バージョン: **v3.0.0**
+バージョン: **v3.1.0**
 
 実装: **C++17（MinGW-w64 / g++）+ WebView2**。UI はネイティブの WebView2 ウィンドウ上の HTML / CSS / バニラ JS です。配布アプリに Python や Qt のランタイムは含まれません。
 
@@ -15,8 +15,10 @@
 ソースをビルドしなくてよい場合は、GitHub Releases から ZIP をダウンロードしてください。
 
 - [最新の Release](https://github.com/maktak-105/QuickFolderSize/releases)
-- [v3.0.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.0.0)
-- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.0.0/QuickFolderSize-binary.zip)
+- [v2.0.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v2.0.1)
+- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v2.0.1/QuickFolderSize-binary.zip)
+- [v3.1.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.1.0)
+- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.1.0/QuickFolderSize-binary.zip)
 
 ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行します。
 
@@ -24,7 +26,7 @@ ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行しま�
 - `QuickFolderSize_cli.exe` — 任意のCLI版。[CLI](#cli)を参照
 - `WebView2Loader.dll` — WebView2 ローダー(`QuickFolderSize.exe`に必須)
 - `readme.txt` / `readme_jp.txt` — 使い方
-- `mcp-server/` — 任意のMCPサーバー(Node.jsソース、Node.jsと初回の`npm install`が必要)。[MCP サーバー](#mcp-サーバー)を参照
+- 配布ZIP内の `mcp-server/` — 任意のMCPサーバー。ソースは [`src/integrations/mcp-server/`](src/integrations/mcp-server/README.md) にあり、Node.jsと初回の`npm install`が必要です。
 - `mcp_readme.txt` / `mcp_readme_jp.txt` — MCPサーバーの説明書
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
@@ -59,7 +61,7 @@ Windows 11 には WebView2 Runtime が標準搭載です。一部の Windows 10 
 - フォルダ容量レポート。Markdown または JSON で出力(スキーマは[CLI](#cli)と共通)
 - 日本語 ⇔ English（メニューバー右端）。メニュー・ヘッダー・ダイアログ・レポートが即時切替
 - 任意のCLI版(`QuickFolderSize_cli.exe`)。スキャン結果をJSONで標準出力し、スクリプト・AIエージェント向け。[CLI](#cli)を参照
-- 任意のMCPサーバー(`mcp-server/`)。Claude CodeのようなAIエージェントがHTTP経由でスキャンを呼び出せる。[MCP サーバー](#mcp-サーバー)を参照
+- `src/integrations/mcp-server/` の任意MCPサーバー。配布ZIPでは `mcp-server/` として同梱します。[MCP サーバー](#mcp-サーバー)を参照
 
 ## UI
 
@@ -93,7 +95,7 @@ QuickDiskBench と同じ系統のダーク・グラスモーフィズムです�
 ## ビルド済みアプリの起動
 
 ```text
-dist\binary\QuickFolderSize.exe
+dist\QuickFolderSize.exe
 ```
 
 次のファイルは **同じフォルダ** に置いてください。
@@ -143,21 +145,21 @@ QuickFolderSize_cli.exe <path> [--pretty] [--version]
 - **実行間のキャッシュはありません。** 1回の起動は独立したプロセスなので毎回フルスキャンになります。GUIのmtimeキャッシュによる再スキャン高速化に相当する機能はありません。
 - 例: `QuickFolderSize_cli.exe C:\Users\me\Downloads | jq .total_size`
 
-配布パッケージ向けの説明: [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt)（日本語）、[`dist/documents/readme.txt`](dist/documents/readme.txt)（英語）。
+配布パッケージ向けの説明: [`docs/distribution/readme_jp.txt`](docs/distribution/readme_jp.txt)（日本語）、[`docs/distribution/readme.txt`](docs/distribution/readme.txt)（英語）。
 
 ## MCP サーバー
 
-`mcp-server/` は `QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するNode.js製サイドカーです。Claude CodeのようなAIエージェントが、GUIを開かずスキャン結果を直接取得できます。配布ZIPに同梱されていますが、GUI/CLIと違い自己完結の実行ファイルではなくNode.jsソースなので、利用にはNode.jsのインストールが別途必要です。
+`src/integrations/mcp-server/` は `QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するNode.js製サイドカーです。Claude CodeのようなAIエージェントが、GUIを開かずスキャン結果を直接取得できます。配布ZIPではトップレベルの `mcp-server/` に同梱します。利用にはNode.jsが必要です。
 
 ```
-cd mcp-server
+cd src\integrations\mcp-server
 npm install          # 初回のみ
-mcp-server\start-admin.bat
+start-admin.bat
 ```
 
 **管理者権限での起動が必須です。** 非管理者だとCLIがMFT高速経路を使えず低速なWin32列挙にフォールバックし、巨大フォルダのスキャンでシステムに負荷がかかります。起動後は `http://127.0.0.1:39391/mcp` で待ち受けます。
 
-提供ツール: `server_status`(疎通確認)、`scan_folder`(同期スキャン)、`start_scan`/`get_scan_result`(非同期スキャン、大きいフォルダ向け)。詳細・運用上の注意(Claude側ツール呼び出しのタイムアウト回避策など)は [`mcp-server/README.md`](mcp-server/README.md) を参照してください。
+提供ツール: `server_status`(疎通確認)、`scan_folder`(同期スキャン)、`start_scan`/`get_scan_result`(非同期スキャン、大きいフォルダ向け)。詳細・運用上の注意(Claude側ツール呼び出しのタイムアウト回避策など)は [`src/integrations/mcp-server/README.md`](src/integrations/mcp-server/README.md) を参照してください。
 
 ### ソースからのビルド
  
@@ -173,6 +175,7 @@ scripts\build.bat
 
 `scripts\build.bat` は `python scripts\build.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドル(GUIへRCDATAとして埋め込み)し、GUI EXE（`-mwindows`、エンジンは静的リンク）とCLI EXE(コンソールサブシステム、管理者マニフェストなし)をコンパイルし、`WebView2Loader.dll` をコピーします。
 
+詳細は [`docs/environment.md`](docs/environment.md)。
 詳細は [`docs/environment.md`](docs/environment.md)。
 
 ## キーボードショートカット
@@ -195,21 +198,23 @@ scripts\build.bat
 
 ## リポジトリ構成
 
-```
+```text
 QuickFolderSize/
+├── .github/workflows/    CI / Release ワークフロー
 ├── src/
-│   ├── app/              GUIホスト & Windowsリソース（main_gui.cpp, .rc, .ico, .manifest）
-│   ├── cli/              CLIエントリーポイント & CLIリソース（main_cli.cpp, .rc）
-│   ├── engine/           フォルダスキャン & MFTエンジン（engine.cpp, engine.h）
-│   └── ui/               UIソース（index.html, css/, js/, img/）
-├── proto/prototype/      Phase 1 の Python/PyQt6 プロトタイプ（参照用）
-├── scripts/              build.py（ビルドスクリプト）, build.bat, bundle_html.py
-├── resources/help/       アプリ内ヘルプ・操作説明書の原稿（help.md / help_jp.md）
+│   ├── app/              GUIホスト、Windowsリソース、アプリ内ヘルプ
+│   ├── cli/              CLIエントリーポイントとリソース
+│   ├── engine/           フォルダスキャンとMFTエンジン
+│   ├── ui/               HTML、CSS、JavaScript、画像
+│   └── integrations/
+│       └── mcp-server/   Node.js MCPサーバーのソース
+├── proto/                保存済みPythonプロトタイプと検証ツール
+├── scripts/              ビルドとUIバンドル用スクリプト
 ├── docs/                 仕様・開発環境・バージョン情報
-│   └── distribution/     配布用 readme / history / LICENSE
-├── dist/                 フラットなビルド成果物（Git 管理外、.gitkeepのみ保持）
-├── mcp-server/           CLIをHTTP MCPツールとして公開するNode.jsサイドカー([README](mcp-server/README.md))
-└── .github/workflows/    CI / Release ワークフロー
+│   └── distribution/     配布用readme、履歴、ライセンス
+├── plans/                計画と実施結果
+├── build/intermediate/   ビルド中間生成物（Git管理外）
+└── dist/                 配布成果物（Git管理外）
 ```
 
 ## ドキュメント

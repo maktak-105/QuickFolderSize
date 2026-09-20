@@ -9,7 +9,7 @@
 | OS | Windows 10 / 11 (64-bit) |
 | C++ | C++17 |
 | Compiler | MinGW-w64 (g++). Verified with WinLibs (MCF threads, UCRT) `BrechtSanders.WinLibs.MCF.UCRT` 16.1.0-14.0.0-r1 |
-| Python | 3.x (for `build_native.py` / `bundle_html.py` only; not needed by the distributed app) |
+| Python | 3.x (for `scripts/build.py` / `bundle_html.py` only; not needed by the distributed app) |
 | WebView2 SDK | Headers placed at `C:\tools\webview2\build\native\include` (default; change with `WEBVIEW2_INCLUDE`). Verified locally with NuGet `Microsoft.Web.WebView2` 1.0.4129.50 |
 | WebView2 Runtime | Required at runtime (bundled with Windows 11 by default; Windows 10 / LTSC / Server may need it installed separately) |
 
@@ -21,7 +21,7 @@
 winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
 ```
 
-`build_native.py` searches the standard WinGet install location directly. It also looks for `windres.exe`/`llvm-windres.exe` in the same folder as the detected `g++`, so adding it to `PATH` isn't required just to build.
+`scripts/build.py` searches the standard WinGet install location directly. It also looks for `windres.exe`/`llvm-windres.exe` in the same folder as the detected `g++`, so adding it to `PATH` isn't required just to build.
 
 To invoke `g++`/`windres` directly from a terminal, add the following to the **user** PATH:
 
@@ -57,18 +57,18 @@ Test-Path C:\tools\webview2\build\native\include\WebView2.h
 ```powershell
 cd QuickFolderSize
 build.bat
-# -> dist\binary\QuickFolderSize.exe
+# -> dist\QuickFolderSize.exe
 ```
 
-`build.bat` is a thin wrapper around `python build-tools\build_native.py`. Linking fails with `Permission denied` if the EXE is currently running — close it first and rerun.
+`build.bat` is a thin wrapper around `python scripts\build.py`. Linking fails with `Permission denied` if the EXE is currently running — close it first and rerun.
 
-### Build steps (inside `build_native.py`)
+### Build steps (inside `scripts/build.py`)
 
-1. `bundle_html.py` bundles `templates/index.html` + `static/css/style.css` + `static/js/app.js` into a single self-contained `dist/binary/index.html`. CSS/JS are inlined, and relative `<img>` sources (the About dialog's `static/img/author.png`) are embedded as data URIs (`NavigateToString` can't resolve external resources). The same content is also copied to `core/native/index_embed.html` for the resource compile step below.
-2. `windres` turns `core/native/QuickFolderSize.rc` (app icon, manifest, and the `index_embed.html` RCDATA resource) and `core/native/QuickFolderSize_cli.rc` (icon and version info only, no manifest) into resource objects.
+1. `bundle_html.py` bundles `src/ui/index.html` + `src/ui/css/style.css` + `src/ui/js/app.js` into a single self-contained `build/intermediate/index.html`. CSS/JS are inlined, and relative `<img>` sources (the About dialog's `src/ui/img/author.png`) are embedded as data URIs (`NavigateToString` can't resolve external resources). The same content is also copied to `src/index_embed.html` for the resource compile step below.
+2. `windres` turns `src/QuickFolderSize.rc` (app icon, manifest, and the `index_embed.html` RCDATA resource) and `src/QuickFolderSize_cli.rc` (icon and version info only, no manifest) into resource objects.
 3. `engine.cpp` + `webview_main.cpp` + the GUI resource are compiled with `-mwindows -static` into `QuickFolderSize.exe` (the engine is statically linked in, and the bundled HTML is embedded as an RCDATA resource).
 4. `engine.cpp` + `main_cli.cpp` + the CLI resource are compiled with `-static` (no `-mwindows`, so it keeps a console) into `QuickFolderSize_cli.exe` (no administrator manifest, so it runs `asInvoker` by default).
-5. `WebView2Loader.dll` and the dev-time `static/css` / `static/js` are copied into `dist/binary/`.
+5. `WebView2Loader.dll` and the dev-time `src/ui/css` / `src/ui/js` are copied into `dist/`.
 
 ### Build output
 
@@ -79,7 +79,7 @@ dist/
 │   ├── QuickFolderSize_cli.exe # CLI build (no administrator rights required, no dependencies)
 │   ├── WebView2Loader.dll      # WebView2 loader (required by the GUI build)
 │   ├── index.html              # reference copy of the bundled HTML (not read by the GUI, not required for distribution)
-│   └── static/                 # dev-time copy (unused at runtime)
+│   └── src/ui/                 # dev-time copy (unused at runtime)
 └── documents/                 # distribution docs (in git)
     ├── readme.txt             # English
     ├── readme_jp.txt          # Japanese
@@ -106,7 +106,7 @@ The release ZIP has no subfolders — everything sits at the same level:
 
 | Workflow | Trigger | What it does |
 | :--- | :--- | :--- |
-| `.github/workflows/ci.yml` | push / pull_request to `main` | Installs MinGW + WebView2 SDK on windows-latest, runs `build_native.py` |
+| `.github/workflows/ci.yml` | push / pull_request to `main` | Installs MinGW + WebView2 SDK on windows-latest, runs `scripts/build.py` |
 | `.github/workflows/release.yml` | `v*` tag, or workflow_dispatch | Same build, then attaches a flat `QuickFolderSize-binary.zip` to the Release |
 
 CI/Release runners use Chocolatey's MinGW. `WEBVIEW2_INCLUDE` points at the job's NuGet extraction path.
@@ -133,34 +133,22 @@ The CLI build (`QuickFolderSize_cli.exe`) has no administrator manifest and runs
 
 ```text
 QuickFolderSize/
-├── core/native/
-│   ├── engine.h / engine.cpp          scan engine (shared by GUI and CLI)
-│   ├── webview_main.cpp               WebView2 host, WebMessage, dialogs (GUI)
-│   ├── main_cli.cpp                   CLI entry point
-│   ├── QuickFolderSize.rc / .ico / .manifest  GUI resources
-│   ├── QuickFolderSize_cli.rc         CLI resources (no manifest)
-│   └── index_embed.html               generated at build time (not in git); embedded into the GUI via RCDATA
-├── templates/index.html          dev-time HTML
-├── static/
-│   ├── css/style.css
-│   ├── js/app.js
-│   └── img/author.png            for the About dialog (embedded when bundled)
-├── resources/
-│   ├── icons/QuickFolderSize.ico  canonical icon source (core/native keeps its own copy for windres)
-│   └── help/help.md / help_jp.md  in-app help / operation manual source
+├── src/
+│   ├── app/                     GUI host, resources, and in-app help
+│   ├── cli/                     CLI entry point and resources
+│   ├── engine/                  Shared scan engine and MFT code
+│   ├── ui/                      HTML, CSS, JavaScript, and images
+│   └── integrations/
+│       └── mcp-server/          Optional Node.js MCP server source
+├── proto/                       Archived prototype and CLI tools
+├── scripts/                     Build and UI bundling scripts
 ├── assets/                       README screenshots
-├── python/prototype/             Phase 1 prototype (reference only)
-├── document/
-│   ├── spec.md / spec_jp.md
-│   ├── environment.md / environment_jp.md  this file
-│   └── about.md / about_jp.md
-├── dist/
-│   ├── binary/                   build output (not in git)
-│   └── documents/                distribution readme / history / LICENSE
+├── docs/
+│   └── distribution/             Release readme, history, and licenses
+├── build/intermediate/           Generated build inputs (not in git)
+├── dist/                         Build output (not in git)
 ├── .github/workflows/            CI and Release
 ├── LICENSE                       repository MIT license (English original)
 ├── README.md / README_jp.md
-├── build-tools/                   build_native.py / bundle_html.py
-├── build.bat
 └── .gitignore
 ```

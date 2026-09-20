@@ -2,7 +2,7 @@
 
 `QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するサイドカー。Claude Code のようなAIエージェントが、GUIを開かずにフォルダスキャンを呼び出せるようにする。
 
-本体アプリ(`../dist/binary/`)とは別の Node.js プロセスとして動く(このディレクトリ自体の`package.json`はnpmパッケージとして独自にバージョン管理している)。ただしこの機能追加がプロジェクト全体をv3.0.0へ引き上げた変更点そのものなので、`../HISTORY.md`にはv3.0.0のエントリとして記録している。
+本体アプリとは別の Node.js プロセスとして動きます。ソースは `src/integrations/mcp-server/` にあり、リリースZIPではトップレベルの `mcp-server/` にまとめます。このディレクトリの`package.json`はnpmパッケージとして独自にバージョン管理しています。
 
 ## 起動
 

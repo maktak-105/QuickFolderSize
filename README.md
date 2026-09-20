@@ -6,7 +6,7 @@
 
 Windows desktop app that shows how much space folders and files use on local drives. Scan a path, browse the result as a sortable tree with ratio bars, and export a Markdown report.
 
-Version: **v3.0.0**
+Version: **v3.1.0**
 
 Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanilla JS hosted in a native WebView2 window. There is no Python or Qt runtime in the shipped app.
 
@@ -15,8 +15,8 @@ Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanil
 If you only want to run the app, download the ZIP from GitHub Releases.
 
 - [Latest releases](https://github.com/maktak-105/QuickFolderSize/releases)
-- [v3.0.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.0.0)
-- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.0.0/QuickFolderSize-binary.zip)
+- [v3.1.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.1.0)
+- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.1.0/QuickFolderSize-binary.zip)
 
 Extract every file into the same folder and run `QuickFolderSize.exe`.
 
@@ -24,7 +24,7 @@ Extract every file into the same folder and run `QuickFolderSize.exe`.
 - `QuickFolderSize_cli.exe` — optional CLI build; see [CLI](#cli) below
 - `WebView2Loader.dll` — WebView2 loader (required by `QuickFolderSize.exe`)
 - `readme.txt` / `readme_jp.txt` — usage notes
-- `mcp-server/` — optional MCP server (Node.js source; requires Node.js and a one-time `npm install`); see [MCP Server](#mcp-server)
+- `mcp-server/` in the release ZIP — optional MCP server (Node.js source; requires Node.js and a one-time `npm install`); source: [`src/integrations/mcp-server/`](src/integrations/mcp-server/README.md)
 - `mcp_readme.txt` / `mcp_readme_jp.txt` — MCP server docs
 - `LICENSE.txt` / `LICENSE_jp.txt` — MIT License
 
@@ -59,7 +59,7 @@ Updates go through pull requests to `main`. Pushing a `v*` tag (or running the R
 - Folder-size report, exported as Markdown or JSON (same schema as the [CLI](#cli))
 - Japanese / English toggle (menu bar, top right). Menus, headers, dialogs, and reports switch immediately
 - Optional CLI build (`QuickFolderSize_cli.exe`) that prints scan results as JSON for scripts and AI agents — see [CLI](#cli)
-- Optional MCP server (`mcp-server/`) that lets AI agents like Claude Code call scans over HTTP — see [MCP Server](#mcp-server)
+- Optional MCP server source in `src/integrations/mcp-server/`, packaged as `mcp-server/` in the release ZIP — see [MCP Server](#mcp-server)
 
 ## UI
 
@@ -93,7 +93,7 @@ Layout:
 ## Run the built app
 
 ```text
-dist\binary\QuickFolderSize.exe
+dist\QuickFolderSize.exe
 ```
 
 Keep these files in the **same folder**:
@@ -143,21 +143,21 @@ QuickFolderSize_cli.exe <path> [--pretty] [--version]
 - **No cache between runs.** Each invocation is a fresh process, so it always does a full scan — there's no equivalent to the GUI's mtime-based rescan speedup.
 - Example: `QuickFolderSize_cli.exe C:\Users\me\Downloads | jq .total_size`
 
-Distribution notes for end users: [`dist/documents/readme.txt`](dist/documents/readme.txt) (English) and [`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt) (Japanese).
+Distribution notes for end users: [`docs/distribution/readme.txt`](docs/distribution/readme.txt) (English) and [`docs/distribution/readme_jp.txt`](docs/distribution/readme_jp.txt) (Japanese).
 
 ## MCP Server
 
-`mcp-server/` is a Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool, so AI agents like Claude Code can pull scan results directly without opening the GUI. It ships inside the release ZIP, but unlike the GUI/CLI it isn't a self-contained executable — it's Node.js source, so you need Node.js installed to use it.
+`src/integrations/mcp-server/` is a Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool, so AI agents like Claude Code can pull scan results directly without opening the GUI. The release ZIP packages it in a top-level `mcp-server/` folder. It isn't a self-contained executable, so you need Node.js installed to use it.
 
 ```
-cd mcp-server
+cd src\integrations\mcp-server
 npm install          # once
-mcp-server\start-admin.bat
+start-admin.bat
 ```
 
 **Must run elevated.** Without administrator rights the CLI can't use the MFT fast path and falls back to the slow Win32 walk, which puts real load on the system for large folders. Once started, it listens on `http://127.0.0.1:39391/mcp`.
 
-Tools exposed: `server_status` (connectivity check), `scan_folder` (synchronous scan), `start_scan`/`get_scan_result` (async scan, for large folders). See [`mcp-server/README.md`](mcp-server/README.md) for details and operational notes (including a workaround for tool-call timeouts on the Claude Code side).
+Tools exposed: `server_status` (connectivity check), `scan_folder` (synchronous scan), `start_scan`/`get_scan_result` (async scan, for large folders). See [`src/integrations/mcp-server/README.md`](src/integrations/mcp-server/README.md) for details and operational notes (including a workaround for tool-call timeouts on the Claude Code side).
 
 ## Build from source
 
@@ -198,17 +198,19 @@ No third-party C++ libraries. The frontend is vanilla JS.
 ```
 QuickFolderSize/
 ├── src/
-│   ├── app/              GUI host & Windows resources (main_gui.cpp, .rc, .ico, .manifest)
-│   ├── cli/              CLI entry point & CLI resource (main_cli.cpp, .rc)
-│   ├── engine/           Folder scanning & MFT engine (engine.cpp, engine.h)
-│   └── ui/               UI source files (index.html, css/, js/, img/)
-├── proto/prototype/      Phase 1 Python/PyQt6 prototype (reference only)
-├── scripts/              build.py (build script), build.bat, bundle_html.py
-├── resources/help/       In-app help / operation manual source (help.md / help_jp.md)
-├── docs/                 Spec, environment, about
-│   └── distribution/     Packaged readme / history / LICENSE
+│   ├── app/              GUI host and Windows resources
+│   │   └── help/         In-app help source
+│   ├── cli/              CLI entry point and resources
+│   ├── engine/           Shared folder scanning and MFT engine
+│   ├── ui/               HTML, CSS, JavaScript, and images
+│   └── integrations/
+│       └── mcp-server/   Optional Node.js MCP server source
+├── proto/                Archived prototype and native CLI tools
+├── scripts/              Build and UI bundling scripts
+├── docs/                 Specifications and developer documentation
+│   └── distribution/     Release readme, history, and licenses
+├── build/intermediate/   Generated resource inputs (not in git)
 ├── dist/                 Flat build output (not in git except .gitkeep)
-├── mcp-server/           Node.js sidecar exposing the CLI as an HTTP MCP tool ([README](mcp-server/README.md))
 └── .github/workflows/    CI and release workflows
 ```
 

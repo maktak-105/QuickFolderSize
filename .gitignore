@@ -1,22 +1,27 @@
+# Phase 1 (Python) PyInstaller
 # Build output & intermediate files
 build/
 dist/*
 !dist/.gitkeep
 dist_tmp/
 __pycache__/
+*.pyc
 *.py[cod]
 *.o
 *.exe
 *.dll
 *.log
 
+dist/*.zip
 # Environment & IDE
-.venv/
 .vscode/
 .idea/
 Thumbs.db
 .DS_Store
 
+
+src/*_debug.log
+*.py[cod]
 # Test tooling & reports
 proto/tests/reports/
 .pytest_cache/

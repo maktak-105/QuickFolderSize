@@ -118,5 +118,5 @@ More documentation
 See also, in the source repository:
 - mcp-server/README.md   (the detailed original this file is based on)
 - README.md               "MCP Server" section
-- document/spec.md         Section 10 (technical spec)
-- HISTORY.md               v3.0.0 (why this tool was added)
+- docs/spec.md         Section 10 (technical spec)
+- HISTORY.md               v3.1.0 (why this tool was added)
