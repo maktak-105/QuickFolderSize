@@ -1,5 +1,9 @@
 # QuickFolderSize Changelog
 
+## v3.1.0 — 2026-09-20
+
+- Fixed the project restructure, build/package paths, and release verification.
+
 [日本語版 HISTORY_jp.md](HISTORY_jp.md)
 
 ## Versioning rules
@@ -13,7 +17,7 @@
 - Added `mcp-server/`, exposing `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool so AI agents like Claude Code can pull scan results without opening the GUI.
 - Tools: `server_status` (connectivity check), `scan_folder` (synchronous scan), `start_scan`/`get_scan_result` (async scan, for large folders).
 - Observed `scan_folder` failing with a `session expired` error on large folders due to an undocumented MCP-client-side tool-call timeout (shorter than the server's 5-minute timeout); worked around it with the `start_scan`/`get_scan_result` async pattern.
-- Details: [`mcp-server/README.md`](mcp-server/README.md), [document/spec.md](document/spec.md) section 10.
+- Details: [`src/integrations/mcp-server/README.md`](src/integrations/mcp-server/README.md), [docs/spec.md](docs/spec.md) section 10.
 
 ## v2.1.1 (2026-08-24)
 

@@ -4,7 +4,7 @@
 
 ## Version
 
-Ver. v3.0.0
+Ver. v3.1.0
 
 ## Display language
 

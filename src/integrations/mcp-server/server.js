@@ -8,7 +8,14 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 
 const PORT = process.env.QFS_MCP_PORT || 39391;
-const CLI_PATH = path.join(__dirname, '..', 'dist', 'binary', 'QuickFolderSize_cli.exe');
+const cliCandidates = [
+  process.env.QUICKFOLDERSIZE_CLI,
+  path.resolve(__dirname, '../../../dist/QuickFolderSize_cli.exe'),
+  // In the release ZIP, mcp-server/ sits beside the CLI executable.
+  path.resolve(__dirname, '../QuickFolderSize_cli.exe'),
+  path.resolve(__dirname, '../dist/QuickFolderSize_cli.exe'),
+].filter(Boolean);
+const CLI_PATH = cliCandidates.find((candidate) => fs.existsSync(candidate)) || cliCandidates[0];
 const SCAN_TIMEOUT_MS = 5 * 60 * 1000;
 const REPORTS_DIR = path.join(__dirname, 'scan-reports');
 if (!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR, { recursive: true });

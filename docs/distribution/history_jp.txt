@@ -1,4 +1,7 @@
 QuickFolderSize - 更新履歴
+v3.1.0（2026-09-20）
+- フォルダ構成移行後のビルドと配布設定を修正。
+
 
 v3.0.0 (2026-09-14)
 - MCP(Model Context Protocol)サーバー(mcp-server/、任意機能、本パッケージに同梱)を追加。Claude CodeのようなAIエージェントがGUIを開かずHTTP経由でスキャン結果を取得できます。Node.jsと初回の`npm install`が必要。詳細はmcp_readme_jp.txtを参照

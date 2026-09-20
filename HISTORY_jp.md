@@ -1,5 +1,9 @@
 # QuickFolderSize 変更履歴
 
+## v3.1.0 — 2026-09-20
+
+- フォルダ構成移行後のビルド・配布パスとリリース検証を修正。
+
 [English HISTORY.md](HISTORY.md)
 
 ## バージョン命名規則
@@ -13,7 +17,7 @@
 - `mcp-server/`を追加。`QuickFolderSize_cli.exe`をHTTP経由のMCP(Model Context Protocol)ツールとして公開し、Claude CodeのようなAIエージェントからGUI不要でスキャン結果を取得できるようにした。
 - ツール: `server_status`(疎通確認)、`scan_folder`(同期スキャン)、`start_scan`/`get_scan_result`(非同期スキャン、大きいフォルダ向け)。
 - MCPクライアント側のツール呼び出しタイムアウト(サーバー側5分より短い、未文書化)により、大きいフォルダで`scan_folder`が`session expired`エラーになる事象を確認、`start_scan`/`get_scan_result`の非同期パターンで回避する構成にした。
-- 詳細は[`mcp-server/README.md`](mcp-server/README.md)、[document/spec_jp.md](document/spec_jp.md)10節を参照。
+- 詳細は[`src/integrations/mcp-server/README.md`](src/integrations/mcp-server/README.md)、[docs/spec_jp.md](docs/spec_jp.md)10節を参照。
 
 ## v2.1.1（2026-08-24）
 

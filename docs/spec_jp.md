@@ -4,14 +4,14 @@
 
 | 項目 | 内容 |
 |:-----|:-----|
-| バージョン | v3.0.0 |
+| バージョン | v3.1.0 |
 | 目的 | ローカルドライブ・フォルダの使用容量を視覚的に把握する |
 | 対象OS | Windows 10 / 11 (64bit) |
 | 実装言語 | C++17（MinGW-w64 / g++）+ WebView2（HTML/CSS/JS） |
 | 表示言語 | 日本語 / English（メニューバー右端のトグルボタンで切替、クライアント側のみで完結。再起動で日本語に戻る） |
-| 起動方法 | `dist\binary\QuickFolderSize.exe` を実行 |
+| 起動方法 | `dist\QuickFolderSize.exe` を実行 |
 
-> 開発環境・ビルド手順 → `document/environment.md` を参照
+> 開発環境・ビルド手順 → `docs/environment.md` を参照
 
 Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植した。UIロジック・アーキテクチャはワークスペース内の `QuickDiskBench`（C++/MinGW/WebView2、実績あり）を踏襲している。旧Python実装は `python/prototype/` に参照用として残っている。
 
@@ -23,7 +23,7 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 ┌─────────────────────────────────────────────────────────┐
 │ QuickFolderSize.exe (WinMain)                            │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │ core/native/webview_main.cpp                       │  │
+│  │ src/webview_main.cpp                       │  │
 │  │  - WebView2ホスト(環境/コントローラ初期化)            │  │
 │  │  - JSON WebMessageプロトコル送受信                    │  │
 │  │  - IFileDialog(フォルダ選択・レポート保存)             │  │
@@ -32,7 +32,7 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 │              │ 呼び出し                    │ JSON postMessage │
 │              ▼                             ▼             │
 │  ┌─────────────────────┐      ┌─────────────────────┐   │
-│  │ core/native/engine.cpp│      │  WebView2 (Chromium)│   │
+│  │ src/engine.cpp│      │  WebView2 (Chromium)│   │
 │  │  - 並列スキャンエンジン │      │  index.html/app.js  │   │
 │  │  - ドライブ容量取得     │      │  (ツリー表示・i18n等) │   │
 │  │  - フォルダ列挙(nav用)  │      │                     │   │
@@ -42,7 +42,7 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 
 - `engine.cpp` は単体DLLとしては提供せず、GUI実行ファイル(`QuickFolderSize.exe`)・CLI実行ファイル(`QuickFolderSize_cli.exe`)の双方へソースを直接static linkする(QuickDiskBenchと同一方式)。両実行ファイルは同じ `engine.cpp`/`engine.h` を共有する
 - ネイティブ⇔JS間は `PostWebMessageAsJson` / `window.chrome.webview.postMessage` によるJSON文字列メッセージでやり取りする(WebMessageプロトコルは本ファイル5節を参照)
-- バンドルHTMLはビルド時に `bundle_html.py` が `templates/index.html` + `static/css/style.css` + `static/js/app.js` を1枚のHTMLへインライン化し(相対パスの `<img>` は data URI に埋め込む。`NavigateToString` は外部リソースを解決できないため)、`core/native/index_embed.html` へコピーしたうえで `QuickFolderSize.rc` の `RCDATA` としてEXEへ埋め込む。GUIは起動時に `FindResourceW`/`LoadResource` で読み出すだけで、ディスク上の `index.html` には依存しない
+- バンドルHTMLはビルド時に `bundle_html.py` が `src/ui/index.html` + `src/ui/css/style.css` + `src/ui/js/app.js` を1枚のHTMLへインライン化し(相対パスの `<img>` は data URI に埋め込む。`NavigateToString` は外部リソースを解決できないため)、`src/index_embed.html` へコピーしたうえで `QuickFolderSize.rc` の `RCDATA` としてEXEへ埋め込む。GUIは起動時に `FindResourceW`/`LoadResource` で読み出すだけで、ディスク上の `index.html` には依存しない
 
 ---
 
@@ -68,8 +68,8 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 | 左ナビペイン | ドライブ一覧（ラベル付き）と遅延展開フォルダツリー。クリックでスキャン、またはスキャン済みツリー内なら即時表示切替 |
 | スキャン時間カード | 左ナビ下。スキャン中はボタン押下からの経過秒を 0.2 秒ごとに `X.XXs` で更新。完了後はラベルと秒数のあいだに `完了`（English: `Done`）を出し、同じ経過秒を固定表示する |
 | 右スキャンツリー | 結果の階層ツリー。▶/▼で展開。ヘッダークリックでソート（既定はサイズ降順）。行クリックでアドレスバーにそのパスを入れる |
-| About ダイアログ | ヘルプ → バージョン情報。開発環境・制作者の下に `static/img/author.png`（配布HTMLへ埋め込み） |
-| ヘルプダイアログ | ヘルプ → ヘルプ...。`resources/help/help.md`(英語)/`help_jp.md`(日本語)の原文をビルド時にHTMLへ埋め込み、表示言語に応じて自前のMarkdownサブセットレンダラーでHTML化して表示。スクロール可能なモーダル |
+| About ダイアログ | ヘルプ → バージョン情報。開発環境・制作者の下に `src/ui/img/author.png`（配布HTMLへ埋め込み） |
+| ヘルプダイアログ | ヘルプ → ヘルプ...。`src/app/help/help.md`(英語)/`help_jp.md`(日本語)の原文をビルド時にHTMLへ埋め込み、表示言語に応じて自前のMarkdownサブセットレンダラーでHTML化して表示。スクロール可能なモーダル |
 
 ---
 
@@ -100,7 +100,7 @@ Phase 1（Python/PyQt6プロトタイプ）からPhase 3として全面移植し
 | アクセスエラー対応 | `GetFileAttributesExW` / `FindFirstFileW` が失敗したフォルダは `is_accessible=false` とし、行を赤字（`#ef4444`）で表示してクラッシュしない。ジャンクション等のリパースポイントは赤字ではなく再帰対象外 |
 | 表示言語切替 | `app.js` の `I18N` テーブルで全UI文言（メニュー・ボタン・列ヘッダー・About・スキャン完了ラベル・Markdownレポート）を管理。メニューバー右端のトグルで即時切替（ネイティブ通信なし、再起動で日本語に戻る） |
 | About | バージョン・開発環境・制作者と、ダイアログ下部の作者画像 |
-| ヘルプ本文表示 | `resources/help/`のMarkdown原稿をアプリ内モーダルで表示。外部ライブラリなしの自前レンダラー(見出し・段落・強調・コード・リンク・箇条書き・表のみ対応) |
+| ヘルプ本文表示 | `src/app/help/`のMarkdown原稿をアプリ内モーダルで表示。外部ライブラリなしの自前レンダラー(見出し・段落・強調・コード・リンク・箇条書き・表のみ対応) |
 | CLI版 | `QuickFolderSize_cli.exe <path>`。GUIを介さず標準出力へJSON(レポート出力(JSON)と同一スキーマ)を返す。管理者権限は要求しない(非対話実行を妨げないため)。詳細は`README.md`/`README_jp.md`を参照 |
 
 ---
@@ -238,7 +238,7 @@ MFT高速経路はNTFSのFILEレコードを直接読むため、EXE起動時に
 
 ### 並列化設計
 
-固定サイズのスレッドプール(32 workers、`core/native/engine.cpp` の `ThreadPool`)を全深度・全ディレクトリで共有する。各タスクは「自分の分を処理して即返る」か「子ディレクトリをプールへ再投入して即返る」かのどちらかしかせず、他タスクの完了をブロック待ちしない(`pending` カウンタが0になった時点で最後に完了したスレッドが親ノードを確定させる)。そのためツリーの深さに関わらず全ワーカーがブロックで固まることがない。
+固定サイズのスレッドプール(32 workers、`src/engine.cpp` の `ThreadPool`)を全深度・全ディレクトリで共有する。各タスクは「自分の分を処理して即返る」か「子ディレクトリをプールへ再投入して即返る」かのどちらかしかせず、他タスクの完了をブロック待ちしない(`pending` カウンタが0になった時点で最後に完了したスレッドが親ノードを確定させる)。そのためツリーの深さに関わらず全ワーカーがブロックで固まることがない。
 
 ### キャッシュ(再スキャン)
 
@@ -249,9 +249,9 @@ MFT高速経路はNTFSのFILEレコードを直接読むため、EXE起動時に
 
 ---
 
-## 10. MCPサーバー(`mcp-server/`)
+## 10. MCPサーバー(`src/integrations/mcp-server/`)
 
-`QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するNode.js製サイドカー。本体アプリ(C++/WebView2)とは別プロセスで、独自の`package.json`でnpmパッケージとしてのバージョンは別管理だが、この機能追加自体がプロジェクト全体をv3.0.0へ引き上げた要因。Claude CodeのようなAIエージェントが、GUIを開かずスキャン結果を取得できるようにする目的で追加した。
+`QuickFolderSize_cli.exe` をHTTP経由のMCP(Model Context Protocol)ツールとして公開するNode.js製サイドカー。本体アプリ(C++/WebView2)とは別プロセスで、独自の`package.json`でnpmパッケージとしてのバージョンは別管理だが、この機能追加自体がプロジェクト全体をv3.1.0へ引き上げた要因。Claude CodeのようなAIエージェントが、GUIを開かずスキャン結果を取得できるようにする目的で追加した。
 
 - **構成**: `express` + `@modelcontextprotocol/sdk` の `StreamableHTTPServerTransport`(ステートレス、`sessionIdGenerator: undefined`)。`http://127.0.0.1:39391/mcp` で待ち受け(ポートは`QFS_MCP_PORT`環境変数で変更可)。リクエストごとに`QuickFolderSize_cli.exe`を子プロセスとしてspawnし、標準出力のJSONをそのまま(または要約して)返す
 - **管理者権限**: `start-admin.bat`/`start-admin.ps1`で起動する前提。`fs.accessSync('C:\Windows\System32\config\SAM', ...)`が成功するかでelevation判定する。管理者権限で起動すればCLIがMFT高速経路を使える。非管理者起動時にCLIへ巨大フォルダを投げると低速なWin32列挙になり、システム負荷が高くなる
@@ -265,7 +265,7 @@ MFT高速経路はNTFSのFILEレコードを直接読むため、EXE起動時に
   | `get_scan_result(scanId)` | `start_scan`のポーリング。完了時は`{path, scanned_at, total_size, subfolder_count, file_count_recursive, top_level_children}`の軽量要約と、フルツリーの保存先(`scan-reports/<scanId>.json`)を返す |
 
 - **`start_scan`/`get_scan_result`を追加した理由**: MCPクライアント(Claude Code)側のツール呼び出しには、サーバー側タイムアウト(5分)よりずっと短い、明示されていない待機タイムアウトがある。`scan_folder`の処理に数十秒以上かかる大きいフォルダ(数万ファイル規模)を対象にすると、サーバーは正常応答しているにもかかわらずクライアント側で`session expired`エラーになることを確認した。非同期パターンでツール呼び出し1回あたりの待機時間を短く保つことで回避する
-- **運用上の注意**: 詳細は[`mcp-server/README.md`](../mcp-server/README.md)を参照。Claude Code側のツール呼び出しタイムアウトを完全に避けたい場合は、Bashツールから`http://127.0.0.1:39391/mcp`へ直接curlで叩く方法もある(SSE形式のレスポンスをNode.jsでパースする)
+- **運用上の注意**: 詳細は[`src/integrations/mcp-server/README.md`](../src/integrations/mcp-server/README.md)を参照。Claude Code側のツール呼び出しタイムアウトを完全に避けたい場合は、Bashツールから`http://127.0.0.1:39391/mcp`へ直接curlで叩く方法もある(SSE形式のレスポンスをNode.jsでパースする)
 
 ---
 

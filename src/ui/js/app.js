@@ -2,7 +2,7 @@
 // python/mainwindow.py + model.py + navmodel.py + delegate.py + utils.py + i18n.py の
 // UIロジックをHTML/CSS/JS + WebView2 JSON WebMessageブリッジへ移植したもの。
 
-const APP_VERSION = 'v3.0.0';
+const APP_VERSION = 'v3.1.0';
 
 const I18N = {
   window_title: { ja: 'QuickFolderSize - フォルダ使用容量ビューワー', en: 'QuickFolderSize - Folder Size Viewer' },
@@ -644,7 +644,7 @@ function hideAbout() {
 }
 
 // ===== ヘルプ =====
-// resources/help/help.md・help_jp.md の原文がビルド時にwindow.HELP_MDへ
+// src/app/help/help.md・help_jp.md の原文がビルド時にwindow.HELP_MDへ
 // そのまま埋め込まれる(bundle_html.py参照)。ここでは表示に必要な最小限の
 // Markdown部分集合(見出し・段落・強調・コード・リンク・箇条書き・表)だけを
 // HTMLへ変換する(外部ライブラリ・CDNは使わない方針のため自前実装)。

@@ -4,14 +4,14 @@
 
 | Item | Details |
 |:-----|:-----|
-| Version | v3.0.0 |
+| Version | v3.1.0 |
 | Purpose | Visualize how much space local drives and folders use |
 | Target OS | Windows 10 / 11 (64-bit) |
 | Implementation | C++17 (MinGW-w64 / g++) + WebView2 (HTML/CSS/JS) |
 | Display language | Japanese / English (toggle button at the top-right of the menu bar; client-side only, resets to Japanese on restart) |
-| How to run | Run `dist\binary\QuickFolderSize.exe` |
+| How to run | Run `dist\QuickFolderSize.exe` |
 
-> Build environment / build steps → see `document/environment.md`
+> Build environment / build steps → see `docs/environment.md`
 
 Fully ported from the Phase 1 (Python/PyQt6 prototype) as Phase 3. The UI logic and architecture follow `QuickDiskBench` in this workspace (C++/MinGW/WebView2, already proven). The old Python implementation remains in `python/prototype/` for reference.
 
@@ -23,7 +23,7 @@ Fully ported from the Phase 1 (Python/PyQt6 prototype) as Phase 3. The UI logic 
 ┌─────────────────────────────────────────────────────────┐
 │ QuickFolderSize.exe (WinMain)                            │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │ core/native/webview_main.cpp                       │  │
+│  │ src/webview_main.cpp                       │  │
 │  │  - WebView2 host (environment / controller init)    │  │
 │  │  - JSON WebMessage protocol send/receive             │  │
 │  │  - IFileDialog (folder picker, report save)          │  │
@@ -32,7 +32,7 @@ Fully ported from the Phase 1 (Python/PyQt6 prototype) as Phase 3. The UI logic 
 │              │ call                        │ JSON postMessage │
 │              ▼                             ▼             │
 │  ┌─────────────────────┐      ┌─────────────────────┐   │
-│  │ core/native/engine.cpp│      │  WebView2 (Chromium)│   │
+│  │ src/engine.cpp│      │  WebView2 (Chromium)│   │
 │  │  - parallel scan engine│      │  index.html/app.js  │   │
 │  │  - drive capacity      │      │  (tree view, i18n)  │   │
 │  │  - folder listing (nav)│      │                     │   │
@@ -42,7 +42,7 @@ Fully ported from the Phase 1 (Python/PyQt6 prototype) as Phase 3. The UI logic 
 
 - `engine.cpp` is not shipped as a standalone DLL; its source is statically linked directly into both the GUI executable (`QuickFolderSize.exe`) and the CLI executable (`QuickFolderSize_cli.exe`), the same approach QuickDiskBench uses. Both executables share the same `engine.cpp`/`engine.h`
 - Native ↔ JS communication uses JSON string messages via `PostWebMessageAsJson` / `window.chrome.webview.postMessage` (see section 5 for the WebMessage protocol)
-- At build time, `bundle_html.py` inlines `templates/index.html` + `static/css/style.css` + `static/js/app.js` into one bundled HTML (relative-path `<img>` sources are embedded as data URIs, since `NavigateToString` cannot resolve external resources), copies it to `core/native/index_embed.html`, and embeds it into the EXE as `RCDATA` via `QuickFolderSize.rc`. At startup the GUI simply reads it back with `FindResourceW`/`LoadResource` — it does not depend on an `index.html` file on disk
+- At build time, `bundle_html.py` inlines `src/ui/index.html` + `src/ui/css/style.css` + `src/ui/js/app.js` into one bundled HTML (relative-path `<img>` sources are embedded as data URIs, since `NavigateToString` cannot resolve external resources), copies it to `src/index_embed.html`, and embeds it into the EXE as `RCDATA` via `QuickFolderSize.rc`. At startup the GUI simply reads it back with `FindResourceW`/`LoadResource` — it does not depend on an `index.html` file on disk
 
 ---
 
@@ -68,8 +68,8 @@ Dark glassmorphism (same family as QuickDiskBench). Near-black canvas with cyan/
 | Left nav pane | Drive list (labeled) and a lazily-expanded folder tree. Click to scan, or switch the view instantly if the path is already inside the current scan result |
 | Scan Time card | Below the left nav. While scanning, shows elapsed seconds since the button press, updated every 0.2 s as `X.XXs`. Once finished, shows `Done` (Japanese: `完了`) between the label and the seconds, and freezes that same elapsed time |
 | Result tree (right pane) | Hierarchical result tree. Expand/collapse with ▶/▼. Click a header to sort (default: size, descending). Click a row to fill its path into the address bar |
-| About dialog | Help → About. Shows version, development environment, and author, with `static/img/author.png` below (embedded into the bundled HTML) |
-| Help dialog | Help → Help.... The raw text of `resources/help/help.md` (English) / `help_jp.md` (Japanese) is embedded into the bundled HTML at build time and rendered to HTML at runtime by a small custom Markdown-subset renderer, matching the current display language. Shown as a scrollable modal |
+| About dialog | Help → About. Shows version, development environment, and author, with `src/ui/img/author.png` below (embedded into the bundled HTML) |
+| Help dialog | Help → Help.... The raw text of `src/app/help/help.md` (English) / `help_jp.md` (Japanese) is embedded into the bundled HTML at build time and rendered to HTML at runtime by a small custom Markdown-subset renderer, matching the current display language. Shown as a scrollable modal |
 
 ---
 
@@ -100,7 +100,7 @@ Dark glassmorphism (same family as QuickDiskBench). Near-black canvas with cyan/
 | Access-error handling | A folder where `GetFileAttributesExW` / `FindFirstFileW` fails is marked `is_accessible=false` and shown in red (`#ef4444`) without crashing. Reparse points such as junctions are excluded from recursion rather than shown in red |
 | Display language toggle | The `I18N` table in `app.js` manages every UI string (menus, buttons, column headers, About, scan-done label, Markdown report). Switches instantly via the toggle at the top-right of the menu bar, with no native round-trip; resets to Japanese on restart |
 | About | Version, development environment, and author, plus the author image at the bottom of the dialog |
-| Help viewer | Displays the Markdown source under `resources/help/` in an in-app modal, using a small self-written renderer with no external library (supports headings, paragraphs, emphasis, code, links, lists, and tables only) |
+| Help viewer | Displays the Markdown source under `src/app/help/` in an in-app modal, using a small self-written renderer with no external library (supports headings, paragraphs, emphasis, code, links, lists, and tables only) |
 | CLI build | `QuickFolderSize_cli.exe <path>`. Returns JSON on stdout without going through the GUI (same schema as the JSON report export). Does not request administrator rights, so it never blocks non-interactive execution. See `README.md`/`README_jp.md` for details |
 
 ---
@@ -238,7 +238,7 @@ As of v2.1.1 this is generated natively (`BuildMdReport()`/`RenderMdNode()` in `
 
 ### Parallelization design
 
-A fixed-size thread pool (32 workers; `ThreadPool` in `core/native/engine.cpp`) is shared across every depth and every directory. Each task either "handles its own share and returns immediately" or "re-queues its child directories to the pool and returns immediately" — it never blocks waiting for another task to finish (the `pending` counter reaching 0 lets the last-finishing thread finalize the parent node). So no worker ever stalls regardless of tree depth.
+A fixed-size thread pool (32 workers; `ThreadPool` in `src/engine.cpp`) is shared across every depth and every directory. Each task either "handles its own share and returns immediately" or "re-queues its child directories to the pool and returns immediately" — it never blocks waiting for another task to finish (the `pending` counter reaching 0 lets the last-finishing thread finalize the parent node). So no worker ever stalls regardless of tree depth.
 
 ### Cache (rescans)
 
@@ -253,9 +253,9 @@ Report content (both Markdown and JSON) is built natively from the already-in-me
 
 ---
 
-## 10. MCP server (`mcp-server/`)
+## 10. MCP server (`src/integrations/mcp-server/`)
 
-A Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool. It's a separate process from the main C++/WebView2 app (its own `package.json` has an independent npm package version), but the feature addition is what bumped the overall project to v3.0.0. Added so AI agents like Claude Code can pull scan results without opening the GUI.
+A Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model Context Protocol) tool. It's a separate process from the main C++/WebView2 app (its own `package.json` has an independent npm package version), but the feature addition is what bumped the overall project to v3.1.0. Added so AI agents like Claude Code can pull scan results without opening the GUI.
 
 - **Stack**: `express` + `@modelcontextprotocol/sdk`'s `StreamableHTTPServerTransport` (stateless, `sessionIdGenerator: undefined`). Listens on `http://127.0.0.1:39391/mcp` (port configurable via `QFS_MCP_PORT`). Each request spawns `QuickFolderSize_cli.exe` as a child process and returns its stdout JSON, either verbatim or summarized.
 - **Administrator rights**: meant to be started via `start-admin.bat`/`start-admin.ps1`. Elevation is detected by whether `fs.accessSync('C:\Windows\System32\config\SAM', ...)` succeeds. Running elevated lets the CLI use the MFT fast path; scanning a large folder through a non-elevated server falls back to the slow Win32 walk and puts real load on the system.
@@ -269,7 +269,7 @@ A Node.js sidecar that exposes `QuickFolderSize_cli.exe` as an HTTP MCP (Model C
   | `get_scan_result(scanId)` | Polls a `start_scan` job. On completion, returns a lightweight summary (`path`, `scanned_at`, `total_size`, `subfolder_count`, `file_count_recursive`, `top_level_children`) plus the full tree's location on disk (`scan-reports/<scanId>.json`) |
 
 - **Why `start_scan`/`get_scan_result` exist**: the MCP client (Claude Code) applies its own undocumented wait timeout to a tool call, well short of the server's 5-minute timeout. Scanning a large folder (tens of thousands of files) through `scan_folder` can take long enough that the client reports a `session expired` error even though the server answered normally. The async pattern keeps each individual tool call short enough to avoid that.
-- **Operational notes**: see [`mcp-server/README.md`](../mcp-server/README.md). To sidestep the Claude Code tool-call timeout entirely, you can also curl `http://127.0.0.1:39391/mcp` directly from a Bash tool call (the response is SSE-formatted; parse it with Node.js).
+- **Operational notes**: see [`src/integrations/mcp-server/README.md`](../src/integrations/mcp-server/README.md). To sidestep the Claude Code tool-call timeout entirely, you can also curl `http://127.0.0.1:39391/mcp` directly from a Bash tool call (the response is SSE-formatted; parse it with Node.js).
 
 ---
 

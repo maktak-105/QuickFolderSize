@@ -120,5 +120,5 @@ server.js を編集しても、動いているプロセスには反映されま�
 リポジトリ内の以下も参照してください。
 - mcp-server/README.md      （このファイルの元になった詳細版）
 - README_jp.md               「MCP サーバー」節
-- document/spec_jp.md        10節（技術仕様）
-- HISTORY_jp.md               v3.0.0（このツールを追加した経緯）
+- docs/spec_jp.md        10節（技術仕様）
+- HISTORY_jp.md               v3.1.0（このツールを追加した経緯）
