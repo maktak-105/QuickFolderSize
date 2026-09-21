@@ -27,3 +27,8 @@ proto/tests/reports/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Leftovers of the layout before the 2026-09-19/20 restructure (the MCP server now lives in src/integrations/mcp-server/)
+mcp-server/node_modules/
+mcp-server/scan-reports/
+core/native/index_embed.html
