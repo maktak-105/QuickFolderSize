@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2836"/>
+      <stop offset="1" stop-color="#080b10"/>
+    </linearGradient>
+    <linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd970"/>
+      <stop offset="1" stop-color="#f0a020"/>
+    </linearGradient>
+    <linearGradient id="barBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5cb4ff"/>
+      <stop offset="1" stop-color="#1f66ff"/>
+    </linearGradient>
+    <linearGradient id="barTeal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4df0c8"/>
+      <stop offset="1" stop-color="#0e9f86"/>
+    </linearGradient>
+    <linearGradient id="barOrange" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc04a"/>
+      <stop offset="1" stop-color="#ff5f1a"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-40%" width="150%" height="190%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-80%" width="160%" height="260%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <!-- dark rounded-square background, like the other Quick apps -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bg)"/>
+  <rect x="17.5" y="17.5" width="477" height="477" rx="106.5" fill="none" stroke="#3a475c" stroke-opacity="0.7" stroke-width="3"/>
+
+  <!-- folder (back panel with tab, then front panel) -->
+  <rect x="58" y="128" width="130" height="60" rx="20" fill="#c9861a"/>
+  <rect x="58" y="158" width="312" height="252" rx="28" fill="#c9861a"/>
+  <rect x="58" y="192" width="312" height="218" rx="28" fill="url(#folderFront)"/>
+  <rect x="58" y="192" width="312" height="8" rx="4" fill="#fff" fill-opacity="0.35"/>
+
+  <!-- glow behind the bars -->
+  <g filter="url(#glow)" opacity="0.75">
+    <rect x="112" y="218" width="368" height="58" rx="29" fill="#2f86ff"/>
+    <rect x="112" y="296" width="322" height="58" rx="29" fill="#14c9a4"/>
+    <rect x="112" y="374" width="270" height="58" rx="29" fill="#ff7a1f"/>
+  </g>
+
+  <!-- the three bars: big, and sticking out of the folder on the right -->
+  <g filter="url(#shadow)">
+    <rect x="112" y="218" width="368" height="58" rx="29" fill="url(#barBlue)"/>
+    <rect x="112" y="296" width="322" height="58" rx="29" fill="url(#barTeal)"/>
+    <rect x="112" y="374" width="270" height="58" rx="29" fill="url(#barOrange)"/>
+  </g>
+  <g fill="#fff" fill-opacity="0.38">
+    <rect x="132" y="224" width="326" height="8" rx="4"/>
+    <rect x="132" y="302" width="280" height="8" rx="4"/>
+    <rect x="132" y="380" width="228" height="8" rx="4"/>
+  </g>
+
+  <!-- axis line of the chart -->
+  <rect x="94" y="210" width="6" height="230" rx="3" fill="#fff" fill-opacity="0.9"/>
+</svg>
