@@ -12,6 +12,8 @@ Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanil
 
 ## Using the binary release
 
+Code signing: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application is under review; releases published after approval will be signed. See [Code signing policy](docs/code_signing_policy.md).
+
 If you only want to run the app, download the ZIP from GitHub Releases.
 
 - [Latest releases](https://github.com/maktak-105/QuickFolderSize/releases)
