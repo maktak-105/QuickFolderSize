@@ -1,4 +1,9 @@
 QuickFolderSize - Change log
+v3.2.0 (2026-09-24)
+- Fixed bugs when run as administrator (MFT fast path): empty paths in CLI output and reports, a size of 0 for about 10,000 files such as large fragmented files, and some entries shown with 8.3 short names.
+- Fixed cloud folders such as OneDrive being left out of scan results entirely. Online-only files are counted with a size of 0.
+
+
 v3.1.0 (2026-09-20)
 - Fixed build and release packaging after the folder restructure.
 

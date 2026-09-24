@@ -114,10 +114,18 @@ bool GetDirMTime(const std::wstring& path, long long& out_mtime) {
     return true;
 }
 
+bool IsSkippedReparse(DWORD attributes, DWORD reparse_tag);
+
+// FindFirstFileW の結果が再解析ポイントなら dwReserved0 にタグが入る。
+bool IsSkippedFindData(const WIN32_FIND_DATAW& fd) {
+    return IsSkippedReparse(fd.dwFileAttributes, fd.dwReserved0);
+}
+
 bool IsRealDir(const WIN32_FIND_DATAW& fd) {
     if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
-    // シンボリックリンク/NTFSジャンクションは除外(python版 _is_real_dir と同義)
-    return !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+    // シンボリックリンク/NTFSジャンクションは除外(python版 _is_real_dir と同義)。
+    // OneDrive 等のクラウドフォルダは再解析ポイントでも中身がここにあるため辿る。
+    return !IsSkippedFindData(fd);
 }
 
 std::wstring BaseName(const std::wstring& path) {
@@ -179,7 +187,32 @@ constexpr uint64_t kInvalidMftIndex = std::numeric_limits<uint64_t>::max();
 constexpr DWORD kNtfsAttributeStandardInformation = 0x10;
 constexpr DWORD kNtfsAttributeFileName = 0x30;
 constexpr DWORD kNtfsAttributeData = 0x80;
+constexpr DWORD kNtfsAttributeReparsePoint = 0xC0;
 constexpr DWORD kNtfsAttributeEnd = 0xFFFFFFFF;
+
+// オンラインのみ(クラウドのプレースホルダー等)でローカルのディスクを使わないことを示す属性。
+// RECALL_ON_OPEN(0x40000)はディスク上では FILE_ATTRIBUTE_EA と同じビットで、拡張属性を
+// 持つ通常ファイルにも立つため判定に使わない。
+constexpr DWORD kFileAttributeRecallOnDataAccess = 0x00400000;
+constexpr DWORD kNotLocalAttributes = FILE_ATTRIBUTE_OFFLINE | kFileAttributeRecallOnDataAccess;
+
+// 再解析ポイントのうち、別の場所を指すもの(シンボリックリンク、ジャンクション、
+// マウントポイント等の名前サロゲート)だけを集計から外す。クラウドファイル(OneDrive)、
+// 重複除去、WOF圧縮などはデータがこの場所にあるため集計する。タグ不明(0)は従来どおり除外。
+bool IsSkippedReparse(DWORD attributes, DWORD reparse_tag) {
+    if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) return false;
+    return reparse_tag == 0 || IsReparseTagNameSurrogate(reparse_tag);
+}
+
+// Win32 列挙で得たファイルの集計サイズ。オンラインのみのファイルはローカルの
+// ディスクを使わないため0とする(MFT 経路と同じ扱い)。
+unsigned long long FindDataSize(const WIN32_FIND_DATAW& fd) {
+    if (fd.dwFileAttributes & kNotLocalAttributes) return 0;
+    ULARGE_INTEGER sz;
+    sz.HighPart = fd.nFileSizeHigh;
+    sz.LowPart = fd.nFileSizeLow;
+    return sz.QuadPart;
+}
 
 enum class MftScanResult { Success, Unavailable, Cancelled };
 
@@ -197,10 +230,29 @@ struct MftNode {
     unsigned long long size = 0;
     unsigned long long file_count = 0;
     long long mtime_raw = 0;
+    uint32_t attributes = 0;   // $STANDARD_INFORMATION のファイル属性
+    uint32_t reparse_tag = 0;  // $REPARSE_POINT のタグ(無ければ0)
+    uint64_t reparse_lcn = 0;  // 非常駐の $REPARSE_POINT の先頭クラスタ(無ければ0)
     uint16_t sequence = 0;
+    int8_t name_priority = -1; // 採用中の $FILE_NAME の名前空間の優先度
+    bool in_use = false;       // 使用中のベースレコードとして読めた
     bool valid = false;
     bool is_dir = false;
-    bool reparse = false;
+    bool reparse = false;      // 集計から外す再解析ポイント
+};
+
+// 拡張レコード(base_record != 0)から取り出した属性。$ATTRIBUTE_LIST を持つ
+// ファイルでは $DATA や $FILE_NAME がこちらに入るため、読み込み後にベースへマージする。
+struct MftExtension {
+    uint64_t base = 0;
+    uint16_t base_sequence = 0;
+    bool has_size = false;
+    unsigned long long size = 0;
+    int8_t name_priority = -1;
+    std::wstring name;
+    uint64_t parent = kInvalidMftIndex;
+    uint32_t reparse_tag = 0;
+    uint64_t reparse_lcn = 0;
 };
 
 template <typename T>
@@ -289,10 +341,15 @@ int FileNameNamespacePriority(uint8_t ns) {
     return 0;              // DOS 8.3 alias
 }
 
-bool ParseMftRecord(uint8_t* record, size_t record_size, DWORD sector_size,
-                    uint64_t record_index, MftNode& out) {
+enum class MftRecordKind { Invalid, Base, Extension };
+
+// 1 レコード分の FILE レコードを解析する。ベースレコードは node に、拡張レコード
+// (base_record != 0) は ext に書き出す。拡張レコード側の属性は読み込み後に
+// FinalizeMftNodes() でベースへ反映する。
+MftRecordKind ParseMftRecord(uint8_t* record, size_t record_size, DWORD sector_size,
+                             MftNode& node, MftExtension& ext) {
     if (record_size < 48 || memcmp(record, "FILE", 4) != 0 ||
-        !ApplyNtfsFixup(record, record_size, sector_size)) return false;
+        !ApplyNtfsFixup(record, record_size, sector_size)) return MftRecordKind::Invalid;
 
     uint16_t sequence = 0, first_attribute = 0, flags = 0;
     uint32_t bytes_in_use = 0;
@@ -302,77 +359,164 @@ bool ParseMftRecord(uint8_t* record, size_t record_size, DWORD sector_size,
         !ReadField(record, record_size, 22, flags) ||
         !ReadField(record, record_size, 24, bytes_in_use) ||
         !ReadField(record, record_size, 32, base_record) ||
-        !(flags & 0x0001) || base_record != 0 || first_attribute >= record_size) return false;
+        !(flags & 0x0001) || first_attribute >= record_size) return MftRecordKind::Invalid;
 
-    out.sequence = sequence;
-    out.is_dir = (flags & 0x0002) != 0;
+    const bool is_dir = (flags & 0x0002) != 0;
+    long long mtime_raw = 0;
+    uint32_t attributes = 0;
+    bool has_size = false;
+    unsigned long long size = 0;
     int best_name_priority = -1;
+    std::wstring name;
+    uint64_t parent = kInvalidMftIndex;
+    uint32_t reparse_tag = 0;
+    uint64_t reparse_lcn = 0;
     size_t limit = std::min<size_t>(bytes_in_use, record_size);
 
     for (size_t pos = first_attribute; pos + 16 <= limit;) {
         uint32_t type = 0, attr_length = 0;
         if (!ReadField(record, limit, pos, type) || type == kNtfsAttributeEnd) break;
         if (!ReadField(record, limit, pos + 4, attr_length) ||
-            attr_length < 16 || attr_length > limit - pos) return false;
+            attr_length < 16 || attr_length > limit - pos) return MftRecordKind::Invalid;
 
         uint8_t non_resident = record[pos + 8];
         uint8_t attr_name_length = record[pos + 9];
-        if (type == kNtfsAttributeStandardInformation && !non_resident) {
-            uint32_t value_length = 0;
-            uint16_t value_offset = 0;
-            if (ReadField(record, limit, pos + 16, value_length) &&
-                ReadField(record, limit, pos + 20, value_offset) &&
-                value_offset <= attr_length && value_length <= attr_length - value_offset) {
-                const uint8_t* value = record + pos + value_offset;
-                if (value_length >= 24) memcpy(&out.mtime_raw, value + 16, 8);
+        uint32_t value_length = 0;
+        uint16_t value_offset = 0;
+        bool resident_value_ok = !non_resident &&
+            ReadField(record, limit, pos + 16, value_length) &&
+            ReadField(record, limit, pos + 20, value_offset) &&
+            value_offset <= attr_length && value_length <= attr_length - value_offset;
+        const uint8_t* value = record + pos + value_offset;
+
+        if (type == kNtfsAttributeStandardInformation && resident_value_ok) {
+            if (value_length >= 24) memcpy(&mtime_raw, value + 16, 8);
+            uint32_t file_attributes = 0;
+            if (value_length >= 36) memcpy(&file_attributes, value + 32, 4);
+            attributes |= file_attributes;
+        } else if (type == kNtfsAttributeFileName && resident_value_ok && value_length >= 66) {
+            uint8_t name_length = value[64];
+            uint8_t name_namespace = value[65];
+            size_t name_bytes = static_cast<size_t>(name_length) * sizeof(wchar_t);
+            int priority = FileNameNamespacePriority(name_namespace);
+            if (66 + name_bytes <= value_length && priority > best_name_priority) {
+                uint64_t parent_ref = 0;
+                memcpy(&parent_ref, value, 8);
+                parent = parent_ref & 0x0000FFFFFFFFFFFFULL;
+                name.assign(reinterpret_cast<const wchar_t*>(value + 66), name_length);
                 uint32_t file_attributes = 0;
-                if (value_length >= 36) memcpy(&file_attributes, value + 32, 4);
-                out.reparse = (file_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+                memcpy(&file_attributes, value + 56, 4);
+                attributes |= (file_attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+                best_name_priority = priority;
             }
-        } else if (type == kNtfsAttributeFileName && !non_resident) {
-            uint32_t value_length = 0;
-            uint16_t value_offset = 0;
-            if (ReadField(record, limit, pos + 16, value_length) &&
-                ReadField(record, limit, pos + 20, value_offset) &&
-                value_offset <= attr_length && value_length <= attr_length - value_offset &&
-                value_length >= 66) {
-                const uint8_t* value = record + pos + value_offset;
-                uint8_t name_length = value[64];
-                uint8_t name_namespace = value[65];
-                size_t name_bytes = static_cast<size_t>(name_length) * sizeof(wchar_t);
-                int priority = FileNameNamespacePriority(name_namespace);
-                if (66 + name_bytes <= value_length && priority > best_name_priority) {
-                    uint64_t parent_ref = 0;
-                    memcpy(&parent_ref, value, 8);
-                    out.parent = parent_ref & 0x0000FFFFFFFFFFFFULL;
-                    out.name.assign(reinterpret_cast<const wchar_t*>(value + 66), name_length);
-                    uint32_t file_attributes = 0;
-                    memcpy(&file_attributes, value + 56, 4);
-                    out.reparse = out.reparse ||
-                                  ((file_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0);
-                    best_name_priority = priority;
-                }
-            }
-        } else if (type == kNtfsAttributeData && attr_name_length == 0 && !out.is_dir) {
-            if (!non_resident) {
-                uint32_t value_length = 0;
-                if (ReadField(record, limit, pos + 16, value_length)) out.size = value_length;
-            } else {
+        } else if (type == kNtfsAttributeData && attr_name_length == 0 && !is_dir) {
+            if (resident_value_ok) {
+                size = value_length;
+                has_size = true;
+            } else if (non_resident) {
+                // $DATA が複数のエクステントに分かれる場合、data_size を持つのは
+                // lowest_vcn == 0 の断片だけ(ベース・拡張のどちらにあるかは不定)。
                 uint64_t lowest_vcn = 1, data_size = 0;
                 if (ReadField(record, limit, pos + 16, lowest_vcn) && lowest_vcn == 0 &&
-                    ReadField(record, limit, pos + 48, data_size)) out.size = data_size;
+                    ReadField(record, limit, pos + 48, data_size)) {
+                    size = data_size;
+                    has_size = true;
+                }
+            }
+        } else if (type == kNtfsAttributeReparsePoint) {
+            if (resident_value_ok && value_length >= 4) {
+                memcpy(&reparse_tag, value, 4);
+            } else if (non_resident) {
+                // OneDrive のフォルダ等は再解析データが大きく非常駐になる。タグは
+                // データ先頭4バイトなので、先頭クラスタの位置だけ控えて後で読む。
+                uint64_t lowest_vcn = 1;
+                uint16_t run_offset = 0;
+                std::vector<MftRun> runs;
+                if (ReadField(record, limit, pos + 16, lowest_vcn) && lowest_vcn == 0 &&
+                    ReadField(record, limit, pos + 32, run_offset) && run_offset < attr_length &&
+                    ParseRunList(record + pos + run_offset, attr_length - run_offset, runs) &&
+                    !runs.front().sparse)
+                    reparse_lcn = runs.front().lcn;
             }
         }
         pos += attr_length;
     }
 
-    if (record_index == 5) {
-        out.valid = true;
-        out.is_dir = true;
-    } else {
-        out.valid = best_name_priority >= 0 && !out.name.empty();
+    if (base_record != 0) {
+        ext.base = base_record & 0x0000FFFFFFFFFFFFULL;
+        ext.base_sequence = static_cast<uint16_t>(base_record >> 48);
+        ext.has_size = has_size;
+        ext.size = size;
+        ext.name_priority = static_cast<int8_t>(best_name_priority);
+        ext.name = std::move(name);
+        ext.parent = parent;
+        ext.reparse_tag = reparse_tag;
+        ext.reparse_lcn = reparse_lcn;
+        return MftRecordKind::Extension;
     }
-    return out.valid;
+
+    node.in_use = true;
+    node.sequence = sequence;
+    node.is_dir = is_dir;
+    node.mtime_raw = mtime_raw;
+    node.attributes = attributes;
+    if (has_size) node.size = size;
+    node.name_priority = static_cast<int8_t>(best_name_priority);
+    node.name = std::move(name);
+    node.parent = parent;
+    node.reparse_tag = reparse_tag;
+    node.reparse_lcn = reparse_lcn;
+    return MftRecordKind::Base;
+}
+
+// 拡張レコードの $DATA / $FILE_NAME / $REPARSE_POINT をベースレコードへ反映し、
+// 各ノードの有効判定・除外判定・サイズ補正を確定させる。非常駐の再解析データは
+// ボリュームから先頭クラスタを読んでタグを取る(読めなければタグ不明=除外のまま)。
+void FinalizeMftNodes(std::vector<MftNode>& nodes, const std::vector<MftExtension>& extensions,
+                      HANDLE volume, uint64_t cluster_size) {
+    for (const MftExtension& ext : extensions) {
+        if (ext.base >= nodes.size()) continue;
+        MftNode& node = nodes[ext.base];
+        // シーケンス番号が合わない拡張レコードは、再利用前の古いレコードなので使わない。
+        if (!node.in_use || node.sequence != ext.base_sequence) continue;
+        if (ext.has_size && !node.is_dir) node.size = ext.size;
+        if (ext.name_priority > node.name_priority && !ext.name.empty()) {
+            node.name_priority = ext.name_priority;
+            node.name = ext.name;
+            node.parent = ext.parent;
+        }
+        if (ext.reparse_tag != 0) node.reparse_tag = ext.reparse_tag;
+        if (ext.reparse_lcn != 0) node.reparse_lcn = ext.reparse_lcn;
+    }
+
+    uint8_t* cluster = nullptr;
+    for (MftNode& node : nodes) {
+        if (!node.in_use || node.reparse_tag != 0 || node.reparse_lcn == 0 ||
+            !(node.attributes & FILE_ATTRIBUTE_REPARSE_POINT)) continue;
+        if (!cluster) {
+            cluster = static_cast<uint8_t*>(VirtualAlloc(nullptr, static_cast<SIZE_T>(cluster_size),
+                                                         MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+            if (!cluster) break;
+        }
+        if (ReadVolumeAt(volume, node.reparse_lcn * cluster_size, cluster,
+                         static_cast<DWORD>(cluster_size)))
+            memcpy(&node.reparse_tag, cluster, 4);
+    }
+    if (cluster) VirtualFree(cluster, 0, MEM_RELEASE);
+
+    for (uint64_t i = 0; i < nodes.size(); ++i) {
+        MftNode& node = nodes[i];
+        if (!node.in_use) continue;
+        if (i == 5) {
+            node.valid = true;
+            node.is_dir = true;
+            continue;
+        }
+        node.valid = node.name_priority >= 0 && !node.name.empty();
+        node.reparse = IsSkippedReparse(node.attributes, node.reparse_tag);
+        // オンラインのみのファイルはローカルのディスクを使わないため、数だけ数えてサイズは0。
+        if (!node.is_dir && (node.attributes & kNotLocalAttributes)) node.size = 0;
+    }
 }
 
 bool ExtractMftLayout(uint8_t* record, size_t record_size, DWORD sector_size,
@@ -516,6 +660,7 @@ MftScanResult TryScanNtfsMft(const std::wstring& requested_path, const int* stop
     }
 
     auto read_start = std::chrono::steady_clock::now();
+    std::vector<MftExtension> extensions;
     uint64_t logical_offset = 0;
     bool read_ok = true;
     for (const auto& run : runs) {
@@ -537,8 +682,10 @@ MftScanResult TryScanNtfsMft(const std::wstring& requested_path, const int* stop
             size_t first_index = static_cast<size_t>(logical_offset / record_size);
             size_t records = bytes / record_size;
             for (size_t i = 0; i < records && first_index + i < nodes.size(); ++i) {
-                ParseMftRecord(io_buffer + i * record_size, record_size, sector_size,
-                               first_index + i, nodes[first_index + i]);
+                MftExtension ext;
+                if (ParseMftRecord(io_buffer + i * record_size, record_size, sector_size,
+                                   nodes[first_index + i], ext) == MftRecordKind::Extension)
+                    extensions.push_back(std::move(ext));
             }
             within += bytes;
             logical_offset += bytes;
@@ -546,6 +693,7 @@ MftScanResult TryScanNtfsMft(const std::wstring& requested_path, const int* stop
         if (!read_ok || logical_offset >= mft_data_size) break;
     }
     VirtualFree(io_buffer, 0, MEM_RELEASE);
+    if (read_ok) FinalizeMftNodes(nodes, extensions, volume, cluster_size);
     CloseHandle(volume);
     double mft_read_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - read_start).count();
@@ -604,9 +752,9 @@ MftScanResult TryScanNtfsMft(const std::wstring& requested_path, const int* stop
 
     auto build_start = std::chrono::steady_clock::now();
     root = EntryBuilder{};
-    // MFT JSONでは絶対パスを送らずJS側で復元するため、ネイティブ側でも
-    // 125万件分のフルパス文字列を生成・保持しない。
-    if (!BuildEntryFromMft(5, drive_root, nodes, root, stop_flag, false))
+    // GUI表示用JSONは絶対パスを送らずJS側で復元するが、CLI出力やGUIの
+    // JSON/Markdownレポートは node.path をそのまま使うため、フルパスを設定する。
+    if (!BuildEntryFromMft(5, drive_root, nodes, root, stop_flag, true))
         return (stop_flag && *stop_flag != 0) ? MftScanResult::Cancelled : MftScanResult::Unavailable;
     root.scan_mode = 1;
     root.mft_read_ms = mft_read_ms;
@@ -691,14 +839,11 @@ void FullScanAndFanOut(const std::wstring& path, EntryBuilder node, ScanCtx& ctx
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             if (IsRealDir(fd)) dir_paths.push_back(child_path);
         } else {
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue; // シンボリックリンクファイルは除外
+            if (IsSkippedFindData(fd)) continue; // シンボリックリンクファイルは除外
             EntryBuilder fe;
             fe.name = name;
             fe.path = child_path;
-            ULARGE_INTEGER sz;
-            sz.HighPart = fd.nFileSizeHigh;
-            sz.LowPart = fd.nFileSizeLow;
-            fe.size = sz.QuadPart;
+            fe.size = FindDataSize(fd);
             fe.is_dir = false;
             fe.mtime_raw = FileTimeToInt64(fd.ftLastWriteTime);
             node.size += fe.size;
@@ -848,14 +993,11 @@ extern "C" int scan_directory(
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
                 if (IsRealDir(fd)) dir_paths.push_back(child_path);
             } else {
-                if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
+                if (IsSkippedFindData(fd)) continue;
                 EntryBuilder fe;
                 fe.name = name;
                 fe.path = child_path;
-                ULARGE_INTEGER sz;
-                sz.HighPart = fd.nFileSizeHigh;
-                sz.LowPart = fd.nFileSizeLow;
-                fe.size = sz.QuadPart;
+                fe.size = FindDataSize(fd);
                 fe.is_dir = false;
                 fe.mtime_raw = FileTimeToInt64(fd.ftLastWriteTime);
                 root.size += fe.size;
