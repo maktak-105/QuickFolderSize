@@ -464,7 +464,10 @@ void SendScanPlaceholder(const std::wstring& path) {
         do {
             std::wstring name = fd.cFileName;
             if (name == L"." || name == L"..") continue;
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
+            // エンジンと同じく、別の場所を指す再解析ポイント(ジャンクション等)だけを除外する。
+            // OneDrive 等のクラウドフォルダはタグが名前サロゲートでないため表示する。
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+                (fd.dwReserved0 == 0 || IsReparseTagNameSurrogate(fd.dwReserved0))) continue;
             bool is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
             if (!first) ss << L",";
             first = false;

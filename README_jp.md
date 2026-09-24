@@ -6,7 +6,7 @@
 
 ローカルドライブ・フォルダの使用容量を視覚的に把握するための Windows デスクトップアプリです。パスをスキャンし、割合バー付きのソート可能なツリーで結果を表示し、Markdown レポートを出力できます。
 
-バージョン: **v3.1.0**
+バージョン: **v3.2.0**
 
 実装: **C++17（MinGW-w64 / g++）+ WebView2**。UI はネイティブの WebView2 ウィンドウ上の HTML / CSS / バニラ JS です。配布アプリに Python や Qt のランタイムは含まれません。
 
@@ -19,8 +19,8 @@
 - [最新の Release](https://github.com/maktak-105/QuickFolderSize/releases)
 - [v2.0.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v2.0.1)
 - [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v2.0.1/QuickFolderSize-binary.zip)
-- [v3.1.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.1.0)
-- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.1.0/QuickFolderSize-binary.zip)
+- [v3.2.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.2.0)
+- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.2.0/QuickFolderSize-binary.zip)
 
 ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行します。
 

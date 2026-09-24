@@ -1,6 +1,6 @@
 # QuickFolderSize Operation Manual
 
-Ver. v3.1.0
+Ver. v3.2.0
 
 ## 1. Overview
 

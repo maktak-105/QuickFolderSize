@@ -1,5 +1,12 @@
 # QuickFolderSize Changelog
 
+## v3.2.0 — 2026-09-24
+
+- Fixed the MFT fast path (run as administrator) leaving `path` empty for every node in CLI output and in the JSON/Markdown reports.
+- Fixed the MFT fast path reporting a size of 0 for files with an `$ATTRIBUTE_LIST` (such as large, heavily fragmented files). On C:\ about 10,000 files (25GB) were missing from the totals. The same cause also made some entries show 8.3 short names and dropped files whose names were only in extension records; both are fixed.
+- Fixed cloud folders such as OneDrive being left out of the tree entirely because they are reparse points. Only junctions, symbolic links, and other name surrogates are now excluded. Online-only files are included in file counts with a size of 0.
+- After the fix, the C:\ total closely matches the user-file allocation from `fsutil volume allocationReport` (181.56GB vs 182.0GB, 1,300,498 vs 1,300,477 files).
+
 ## v3.1.0 — 2026-09-20
 
 - Fixed the project restructure, build/package paths, and release verification.

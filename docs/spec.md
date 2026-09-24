@@ -4,7 +4,7 @@
 
 | Item | Details |
 |:-----|:-----|
-| Version | v3.1.0 |
+| Version | v3.2.0 |
 | Purpose | Visualize how much space local drives and folders use |
 | Target OS | Windows 10 / 11 (64-bit) |
 | Implementation | C++17 (MinGW-w64 / g++) + WebView2 (HTML/CSS/JS) |
@@ -82,7 +82,10 @@ Dark glassmorphism (same family as QuickDiskBench). Near-black canvas with cyan/
 | Full-depth parallel scan | A fixed-size thread pool (32 workers) is shared across every directory. Completion is signaled via non-blocking fan-out, so parallelism does not degrade with depth |
 | NTFS MFT fast path | For an NTFS volume root such as `C:\`, reads the MFT directly from `\\.\X:` and reconstructs the tree from FILE record parent references, skipping directory traversal. The EXE launches with `requireAdministrator` |
 | Scan-method fallback | If the MFT cannot be opened, or the target is non-NTFS, an individual folder, or a network path, automatically falls back to the classic `FindFirstFileW`/`FindNextFileW` approach |
-| Junction handling | Detects `FILE_ATTRIBUTE_REPARSE_POINT` and excludes it from recursion (for both files and directories) |
+| Junction handling | Only reparse points whose tag is a name surrogate (`IsReparseTagNameSurrogate`: junctions, symbolic links, mount points, etc.) are excluded from totals and recursion (for both files and directories). Cloud files such as OneDrive, deduplicated files, and WOF-compressed files are counted because their data is stored in that location. A reparse point whose tag cannot be read is excluded. The tag comes from `WIN32_FIND_DATAW::dwReserved0` on the Win32 path and from the `$REPARSE_POINT` attribute on the MFT path (when it is non-resident, its first cluster is read from the volume) |
+| Online-only files | Files with `FILE_ATTRIBUTE_OFFLINE` or `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` (such as OneDrive "online-only" files) are included in file counts with a size of 0, because they use no local disk space. `0x40000` (RECALL_ON_OPEN) is not used for this check because on disk it is the same bit as `FILE_ATTRIBUTE_EA` |
+| Hard links | A file with several names is counted once, so disk usage is not counted twice. On the MFT path it is counted under the parent folder of its highest-priority name (Win32+DOS > Win32 > POSIX > DOS) |
+| MFT extension records | For files with an `$ATTRIBUTE_LIST` (large, heavily fragmented files, files with many hard links, etc.), `$DATA`, `$FILE_NAME`, and `$REPARSE_POINT` can be stored in extension records. These are merged into the base record after reading. An extension record whose base-reference sequence number does not match is ignored |
 | Incremental UI updates | Sends a `scan_progress` message to update the tree as each top-level directory finishes |
 | mtime differential cache | The native side keeps the tree from the previous scan. On rescan, each directory's FILETIME is compared; unchanged directories skip re-enumeration and reuse the cache (files are always reused, subdirectories are individually re-verified) |
 | Placeholder display | As soon as a scan starts, the first level under the target folder is shown immediately (sizes blank); values fill in once the scan completes |
@@ -179,11 +182,11 @@ Completion
   └─ JS side: freezes the elapsed seconds since the button press as the completed display, registers the received tree into pathIndex, and redraws the table
 ```
 
-Because the MFT fast path reads NTFS FILE records directly, the EXE shows a UAC prompt at startup to obtain administrator rights. On the MFT path, no progress JSON is sent for large subtrees — only a single completion message. The MFT JSON also omits each node's absolute path; the JS side reconstructs it from the parent path.
+Because the MFT fast path reads NTFS FILE records directly, the EXE shows a UAC prompt at startup to obtain administrator rights. On the MFT path, no progress JSON is sent for large subtrees — only a single completion message. The MFT JSON sent to the display also omits each node's absolute path; the JS side reconstructs it from the parent path. The engine tree (`ScanEntryC::path`) still holds each node's full path, so CLI output and the JSON/Markdown reports include paths.
 
 A cancelled scan (e.g. switching to a different folder mid-scan) discards its result and does not update the cache, matching the Python version's behavior.
 
-Directory entries discovered during a parallel scan that carry `FILE_ATTRIBUTE_REPARSE_POINT` are excluded before being added to the recursion set (protection against junctions/symlinks).
+Directory entries discovered during a parallel scan that are name-surrogate reparse points (junctions, symbolic links, etc.) are excluded before being added to the recursion set. Cloud folders such as OneDrive are recursed into.
 
 ---
 
