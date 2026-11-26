@@ -177,6 +177,8 @@ scripts\build.bat
 
 `scripts\build.bat` は `python scripts\build.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドル(GUIへRCDATAとして埋め込み)し、GUI EXE（`-mwindows`、エンジンは静的リンク）とCLI EXE(コンソールサブシステム、管理者マニフェストなし)をコンパイルし、`WebView2Loader.dll` をコピーします。
 
+`scriptsuild.bat --test-build` は、UI自動テスト用のテスト専用GUI `build/test/QuickFolderSize_test.exe` を生成します。このビルドだけが `--remote-debugging-port=N` 起動引数を受け付け、WebView2 の CDP(リモートデバッグ)を有効にします。管理者権限で動くアプリの CDP ポートは権限昇格の経路になり得るため、配布版(`dist/`)にはこの機能を含めていません。テスト専用ビルドを配布しないでください。
+
 詳細は [`docs/environment.md`](docs/environment.md)。
 詳細は [`docs/environment.md`](docs/environment.md)。
 

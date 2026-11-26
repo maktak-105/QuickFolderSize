@@ -61,7 +61,22 @@ def run(cmd, cwd=None, label=""):
     return True
 
 
-def build():
+def find_webview2_loader(webview_include, repo_root):
+    candidates = [
+        os.environ.get("WEBVIEW2_LOADER"),
+        os.path.join(os.path.dirname(webview_include), "x64", "WebView2Loader.dll"),
+        r"C:\tools\webview2\build\native\x64\WebView2Loader.dll",
+        os.path.join(repo_root, "third_party", "webview2", "runtimes", "win-x64", "native", "WebView2Loader.dll"),
+    ]
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+    return None
+
+
+def build(test_build=False):
+    """test_build=True の場合、CDP(リモートデバッグ)受付を有効にしたテスト専用GUIを
+    build/test/QuickFolderSize_test.exe に生成する(dist/ には一切出力しない)。"""
     compiler = find_compiler()
     if not compiler:
         print("[エラー] C++ コンパイラ (g++ または clang++) が見つかりませんでした。")
@@ -137,14 +152,20 @@ def build():
     if not run(cmd_cli_res, cwd=cli_dir, label="2/4 CLIリソースをビルド中"):
         return False
 
-    # 4. GUI本体 (QuickFolderSize.exe)
-    out_gui_exe = os.path.join(dist_dir, "QuickFolderSize.exe")
+    # 4. GUI本体 (QuickFolderSize.exe / テスト時は build/test/QuickFolderSize_test.exe)
+    if test_build:
+        test_dir = os.path.join(repo_root, "build", "test")
+        os.makedirs(test_dir, exist_ok=True)
+        out_gui_exe = os.path.join(test_dir, "QuickFolderSize_test.exe")
+    else:
+        out_gui_exe = os.path.join(dist_dir, "QuickFolderSize.exe")
     cmd_gui = [
         compiler,
         "-O3",
         "-mwindows",
         "-std=c++17",
         "-static",
+        *(["-DQFS_ENABLE_CDP"] if test_build else []),
         f"-I{webview_include}",
         f"-I{engine_dir}",
         f"-I{app_dir}",
@@ -161,10 +182,22 @@ def build():
         "-luuid",
         "-lcomctl32",
         "-lshell32",
+        "-lshlwapi",
     ]
-    if not run(cmd_gui, label="3/4 GUI (dist/QuickFolderSize.exe) ビルド中"):
+    if not run(cmd_gui, label=f"3/4 GUI ({os.path.relpath(out_gui_exe, repo_root)}) ビルド中"):
         return False
-    print(f"[成功] QuickFolderSize.exe を生成しました ({os.path.getsize(out_gui_exe)} bytes)")
+    print(f"[成功] {os.path.basename(out_gui_exe)} を生成しました ({os.path.getsize(out_gui_exe)} bytes)")
+
+    if test_build:
+        wv_loader = find_webview2_loader(webview_include, repo_root)
+        if not wv_loader:
+            print("[エラー] WebView2Loader.dll が見つかりませんでした")
+            return False
+        shutil.copy2(wv_loader, os.path.join(test_dir, "WebView2Loader.dll"))
+        print("[コピー] WebView2Loader.dll -> build/test/")
+        print(f"\n[完成] テスト専用(CDP有効)バイナリを生成完了: {out_gui_exe}")
+        print("       起動例: QuickFolderSize_test.exe --remote-debugging-port=9222")
+        return True
 
     # 5. CLI本体 (QuickFolderSize_cli.exe)
     out_cli_exe = os.path.join(dist_dir, "QuickFolderSize_cli.exe")
@@ -206,5 +239,5 @@ def build():
 
 
 if __name__ == "__main__":
-    success = build()
+    success = build(test_build="--test-build" in sys.argv[1:])
     sys.exit(0 if success else 1)
