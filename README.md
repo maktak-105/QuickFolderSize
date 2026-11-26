@@ -175,6 +175,8 @@ scripts\build.bat
 
 `scripts\build.bat` runs `python scripts\build.py`. That script finds WinLibs `g++`, bundles the HTML (embedding it into the GUI as an RCDATA resource), compiles the GUI EXE (`-mwindows`, engine statically linked) and the CLI EXE (console subsystem, no administrator manifest), and copies `WebView2Loader.dll`.
 
+`scriptsuild.bat --test-build` produces a test-only GUI, `build/test/QuickFolderSize_test.exe`, for UI automation. Only this build accepts the `--remote-debugging-port=N` argument and enables WebView2 CDP (remote debugging). Because a CDP port on an elevated app can become a privilege-escalation path, the release build (`dist/`) does not include this feature. Do not distribute the test-only build.
+
 Details: [`docs/environment.md`](docs/environment.md).
 
 ## Keyboard shortcuts

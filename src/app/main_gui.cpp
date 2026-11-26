@@ -5,6 +5,7 @@
 #include <unknwn.h>
 #include <WebView2.h>
 #include <shellapi.h>
+#include <shlwapi.h>
 #include <shobjidl.h>
 
 #include <iostream>
@@ -791,6 +792,84 @@ static void LOG(const char* fmt, ...) {
     fprintf(g_log, "\n"); fflush(g_log);
 }
 
+#ifdef QFS_ENABLE_CDP
+// ===== テストビルド限定: CDP(リモートデバッグ)有効化 =====
+// 管理者権限のWebView2はWEBVIEW2_*環境変数/HKCU上書きを仕様で無視するため、
+// UI自動テスト(auto-window/Playwright)用にコードからAdditionalBrowserArgumentsを渡す。
+// 管理者アプリのCDPポートは権限昇格経路になり得るため、配布ビルドには含めない。
+static const IID kIID_ICoreWebView2EnvironmentOptions =
+    {0x2fde08a8, 0x1e9a, 0x4766, {0x8c, 0x05, 0x95, 0xa9, 0xce, 0xb9, 0xd1, 0xc5}};
+
+static HRESULT DupCoTaskString(const std::wstring& s, LPWSTR* out) {
+    if (!out) return E_POINTER;
+    size_t bytes = (s.size() + 1) * sizeof(wchar_t);
+    *out = static_cast<LPWSTR>(CoTaskMemAlloc(bytes));
+    if (!*out) return E_OUTOFMEMORY;
+    memcpy(*out, s.c_str(), bytes);
+    return S_OK;
+}
+
+class QfsEnvOptions : public ICoreWebView2EnvironmentOptions {
+    std::atomic<ULONG> m_ref{ 1 };
+    std::wstring m_args;
+    std::wstring m_language;
+    std::wstring m_targetVersion = L"151.0.4129.50";  // WebView2 SDKの既定値と同一
+    BOOL m_sso = FALSE;
+public:
+    explicit QfsEnvOptions(std::wstring args) : m_args(std::move(args)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == kIID_ICoreWebView2EnvironmentOptions) {
+            *ppv = static_cast<ICoreWebView2EnvironmentOptions*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG r = --m_ref;
+        if (r == 0) delete this;
+        return r;
+    }
+    HRESULT STDMETHODCALLTYPE get_AdditionalBrowserArguments(LPWSTR* v) override { return DupCoTaskString(m_args, v); }
+    HRESULT STDMETHODCALLTYPE put_AdditionalBrowserArguments(LPCWSTR v) override { m_args = v ? v : L""; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_Language(LPWSTR* v) override { return DupCoTaskString(m_language, v); }
+    HRESULT STDMETHODCALLTYPE put_Language(LPCWSTR v) override { m_language = v ? v : L""; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_TargetCompatibleBrowserVersion(LPWSTR* v) override { return DupCoTaskString(m_targetVersion, v); }
+    HRESULT STDMETHODCALLTYPE put_TargetCompatibleBrowserVersion(LPCWSTR v) override { m_targetVersion = v ? v : L""; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_AllowSingleSignOnUsingOSPrimaryAccount(BOOL* v) override {
+        if (!v) return E_POINTER;
+        *v = m_sso;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE put_AllowSingleSignOnUsingOSPrimaryAccount(BOOL v) override { m_sso = v; return S_OK; }
+};
+
+// 起動引数から --remote-debugging-port=N を取り出す。Nは1024〜65535の数字のみ受け付け、無効なら0。
+static int ParseRemoteDebuggingPort() {
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv) return 0;
+    const std::wstring prefix = L"--remote-debugging-port=";
+    int port = 0;
+    for (int i = 1; i < argc; ++i) {
+        std::wstring a = argv[i];
+        if (a.compare(0, prefix.size(), prefix) != 0) continue;
+        std::wstring num = a.substr(prefix.size());
+        if (num.empty() || num.size() > 5 ||
+            !std::all_of(num.begin(), num.end(), [](wchar_t c) { return c >= L'0' && c <= L'9'; })) {
+            break;
+        }
+        int n = std::stoi(num);
+        if (n >= 1024 && n <= 65535) port = n;
+        break;
+    }
+    LocalFree(argv);
+    return port;
+}
+#endif  // QFS_ENABLE_CDP
+
 // The embedded manifest requests elevation, but explicitly relaunch through
 // the UAC "runas" verb as a fallback for shells or compatibility layers that
 // do not honor the manifest on the initial launch.
@@ -816,6 +895,9 @@ static int EnsureAdministrator() {
     executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
     executeInfo.lpVerb = L"runas";
     executeInfo.lpFile = exePath;
+    // 昇格再起動で起動引数が失われないよう、元のコマンドラインの引数部分をそのまま引き継ぐ
+    LPCWSTR args = PathGetArgsW(GetCommandLineW());
+    executeInfo.lpParameters = (args && *args) ? args : NULL;
     executeInfo.nShow = SW_SHOWNORMAL;
 
     if (!ShellExecuteExW(&executeInfo)) {
@@ -882,7 +964,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     wchar_t tempPath[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPath);
+#ifdef QFS_ENABLE_CDP
+    // テストビルドは配布版と別のユーザーデータフォルダを使う(配布版の起動中ブラウザプロセスに
+    // 相乗りすると、異なるブラウザ引数が反映されないため)
+    std::wstring userDataFolder = std::wstring(tempPath) + L"QuickFolderSize_test_WVData";
+#else
     std::wstring userDataFolder = std::wstring(tempPath) + L"QuickFolderSize_WVData";
+#endif
     CreateDirectoryW(userDataFolder.c_str(), NULL);
     LOG("[7] User data folder: %S", userDataFolder.c_str());
 
@@ -907,8 +995,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     }
     LOG("[9] createEnv proc found, calling...");
 
+    ICoreWebView2EnvironmentOptions* envOptions = nullptr;
+#ifdef QFS_ENABLE_CDP
+    int cdpPort = ParseRemoteDebuggingPort();
+    if (cdpPort > 0) {
+        envOptions = new QfsEnvOptions(L"--remote-debugging-port=" + std::to_wstring(cdpPort));
+        LOG("[CDP] enabled port=%d", cdpPort);
+    } else {
+        LOG("[CDP] test build: --remote-debugging-port not specified");
+    }
+#endif
+
     createEnv(
-        nullptr, userDataFolder.c_str(), nullptr,
+        nullptr, userDataFolder.c_str(), envOptions,
         new EnvCompletedHandler(
             [htmlContent](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 LOG("[10] EnvCompletedHandler called, HRESULT=0x%08X, env=%p", (unsigned)result, (void*)env);
@@ -1003,6 +1102,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
             }
         )
     );
+    // 必要な値はcreateEnv呼び出し中に読み取られる(ローダー側で必要ならAddRefされる)
+    if (envOptions) envOptions->Release();
 
     LOG("[13] Entering message loop");
     MSG msg;
