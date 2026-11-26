@@ -6,7 +6,7 @@
 
 Windows desktop app that shows how much space folders and files use on local drives. Scan a path, browse the result as a sortable tree with ratio bars, and export a Markdown report.
 
-Version: **v3.2.0**
+Version: **v3.2.1**
 
 Implementation: **C++17 (MinGW-w64 / g++) + WebView2**. The UI is HTML/CSS/vanilla JS hosted in a native WebView2 window. There is no Python or Qt runtime in the shipped app.
 
@@ -17,8 +17,8 @@ Code signing: Free code signing provided by [SignPath.io](https://signpath.io), 
 If you only want to run the app, download the ZIP from GitHub Releases.
 
 - [Latest releases](https://github.com/maktak-105/QuickFolderSize/releases)
-- [v3.2.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.2.0)
-- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.2.0/QuickFolderSize-binary.zip)
+- [v3.2.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.2.1)
+- [Direct download of QuickFolderSize-binary.zip](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.2.1/QuickFolderSize-binary.zip)
 
 Extract every file into the same folder and run `QuickFolderSize.exe`.
 
@@ -175,7 +175,22 @@ scripts\build.bat
 
 `scripts\build.bat` runs `python scripts\build.py`. That script finds WinLibs `g++`, bundles the HTML (embedding it into the GUI as an RCDATA resource), compiles the GUI EXE (`-mwindows`, engine statically linked) and the CLI EXE (console subsystem, no administrator manifest), and copies `WebView2Loader.dll`.
 
-`scriptsuild.bat --test-build` produces a test-only GUI, `build/test/QuickFolderSize_test.exe`, for UI automation. Only this build accepts the `--remote-debugging-port=N` argument and enables WebView2 CDP (remote debugging). Because a CDP port on an elevated app can become a privilege-escalation path, the release build (`dist/`) does not include this feature. Do not distribute the test-only build.
+`scripts\build.bat --test-build` produces a test-only GUI, `build/test/QuickFolderSize_test.exe`, for UI automation. Only this build accepts the `--remote-debugging-port=N` argument and enables WebView2 CDP (remote debugging). Because a CDP port on an elevated app can become a privilege-escalation path, the release build (`dist/`) does not include this feature. Do not distribute the test-only build.
+
+Running UI automation against the test-only build (uses the Playwright engine of auto-window):
+
+1. Build the test EXE (rebuild after changing the source).
+   ```bat
+   scripts\build.bat --test-build
+   ```
+2. In an **elevated PowerShell**, run the task from the auto-window repository root. `SCAN_PATH` is the folder to scan.
+   ```powershell
+   cd <auto-window repository>
+   $env:SCAN_PATH = "C:\path\to\folder"
+   python -m auto_window run python/tasks/quickfoldersize_cdp_check.yaml
+   ```
+   The task launches the test EXE with `--remote-debugging-port=9222`, connects over CDP, and drives the UI. The last step sends the app's own quit command.
+   From a non-elevated terminal, the app relaunches itself as administrator and the run stalls at the UAC prompt.
 
 Details: [`docs/environment.md`](docs/environment.md).
 

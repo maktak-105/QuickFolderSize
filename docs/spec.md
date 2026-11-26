@@ -4,7 +4,7 @@
 
 | Item | Details |
 |:-----|:-----|
-| Version | v3.2.0 |
+| Version | v3.2.1 |
 | Purpose | Visualize how much space local drives and folders use |
 | Target OS | Windows 10 / 11 (64-bit) |
 | Implementation | C++17 (MinGW-w64 / g++) + WebView2 (HTML/CSS/JS) |

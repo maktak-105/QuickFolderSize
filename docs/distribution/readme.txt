@@ -1,5 +1,5 @@
 QuickFolderSize - Folder Size Viewer
-Distribution package  v3.2.0
+Distribution package  v3.2.1
 
 GitHub
 ------
