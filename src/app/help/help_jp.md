@@ -1,6 +1,6 @@
 # QuickFolderSize 操作説明書
 
-Ver. v3.2.0
+Ver. v3.2.1
 
 ## 1. 概要
 

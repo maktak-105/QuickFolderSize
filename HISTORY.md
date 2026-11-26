@@ -1,5 +1,11 @@
 # QuickFolderSize Changelog
 
+## v3.2.1 — 2026-11-26
+
+- Fixed the command-line arguments being lost when the GUI relaunches itself as administrator.
+- Added a test-only build (`scripts\build.bat --test-build`) that enables WebView2 CDP (remote debugging) for UI automation. The release build does not include this feature; verified that the release EXE does not open CDP even when started with `--remote-debugging-port`.
+- Documented how to run UI automation against the test-only build, and fixed a corrupted character in the build instructions in the README.
+
 ## v3.2.0 — 2026-09-24
 
 - Fixed the MFT fast path (run as administrator) leaving `path` empty for every node in CLI output and in the JSON/Markdown reports.

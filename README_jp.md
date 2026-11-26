@@ -6,7 +6,7 @@
 
 ローカルドライブ・フォルダの使用容量を視覚的に把握するための Windows デスクトップアプリです。パスをスキャンし、割合バー付きのソート可能なツリーで結果を表示し、Markdown レポートを出力できます。
 
-バージョン: **v3.2.0**
+バージョン: **v3.2.1**
 
 実装: **C++17（MinGW-w64 / g++）+ WebView2**。UI はネイティブの WebView2 ウィンドウ上の HTML / CSS / バニラ JS です。配布アプリに Python や Qt のランタイムは含まれません。
 
@@ -19,8 +19,8 @@
 - [最新の Release](https://github.com/maktak-105/QuickFolderSize/releases)
 - [v2.0.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v2.0.1)
 - [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v2.0.1/QuickFolderSize-binary.zip)
-- [v3.2.0](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.2.0)
-- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.2.0/QuickFolderSize-binary.zip)
+- [v3.2.1](https://github.com/maktak-105/QuickFolderSize/releases/tag/v3.2.1)
+- [QuickFolderSize-binary.zip を直接ダウンロード](https://github.com/maktak-105/QuickFolderSize/releases/download/v3.2.1/QuickFolderSize-binary.zip)
 
 ZIP を同じフォルダに展開して `QuickFolderSize.exe` を実行します。
 
@@ -177,9 +177,23 @@ scripts\build.bat
 
 `scripts\build.bat` は `python scripts\build.py` を呼びます。WinLibs の `g++` を探し、HTML をバンドル(GUIへRCDATAとして埋め込み)し、GUI EXE（`-mwindows`、エンジンは静的リンク）とCLI EXE(コンソールサブシステム、管理者マニフェストなし)をコンパイルし、`WebView2Loader.dll` をコピーします。
 
-`scriptsuild.bat --test-build` は、UI自動テスト用のテスト専用GUI `build/test/QuickFolderSize_test.exe` を生成します。このビルドだけが `--remote-debugging-port=N` 起動引数を受け付け、WebView2 の CDP(リモートデバッグ)を有効にします。管理者権限で動くアプリの CDP ポートは権限昇格の経路になり得るため、配布版(`dist/`)にはこの機能を含めていません。テスト専用ビルドを配布しないでください。
+`scripts\build.bat --test-build` は、UI自動テスト用のテスト専用GUI `build/test/QuickFolderSize_test.exe` を生成します。このビルドだけが `--remote-debugging-port=N` 起動引数を受け付け、WebView2 の CDP(リモートデバッグ)を有効にします。管理者権限で動くアプリの CDP ポートは権限昇格の経路になり得るため、配布版(`dist/`)にはこの機能を含めていません。テスト専用ビルドを配布しないでください。
 
-詳細は [`docs/environment.md`](docs/environment.md)。
+テスト専用ビルドでUI自動テストを行う手順(auto-window の Playwright エンジンを使用):
+
+1. テスト用 exe を作る(ソースを変更したら作り直す)。
+   ```bat
+   scripts\build.bat --test-build
+   ```
+2. **管理者の PowerShell** で、auto-window のリポジトリ直下からタスクを実行する。`SCAN_PATH` はスキャンするフォルダ。
+   ```powershell
+   cd <auto-window のリポジトリ>
+   $env:SCAN_PATH = "C:\path\to\folder"
+   python -m auto_window run python/tasks/quickfoldersize_cdp_check.yaml
+   ```
+   タスクがテスト用 exe を `--remote-debugging-port=9222` 付きで起動し、CDP で接続して操作する。最後のステップでアプリ自身の終了コマンドを送る。
+   管理者でないターミナルから実行すると、アプリが管理者として起動し直すときに UAC の確認で止まり、テストが終わらない。
+
 詳細は [`docs/environment.md`](docs/environment.md)。
 
 ## キーボードショートカット
